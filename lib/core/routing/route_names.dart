@@ -10,4 +10,6 @@ class RouteNames {
   static const String projectDetail = 'projectDetail';
   static const String conversation = 'conversation';
   static const String personDetail = 'personDetail';
+  static const String seeAllProjects = 'seeAllProjects';
+  static const String seeAllTasks = 'seeAllTasks';
 }

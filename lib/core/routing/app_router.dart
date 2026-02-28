@@ -10,6 +10,7 @@ import '../../features/chat/chat_screen.dart';
 import '../../features/alerts/alerts_screen.dart';
 import '../../features/detail_screens/task_detail_screen.dart';
 import '../../features/detail_screens/project_detail_screen.dart';
+import '../../features/home/see_all_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -69,6 +70,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => ProjectDetailScreen(
           projectId: state.pathParameters['projectId']!,
         ),
+      ),
+      GoRoute(
+        path: '/projects/all',
+        name: RouteNames.seeAllProjects,
+        builder: (context, state) => const SeeAllScreen(isProjects: true),
+      ),
+      GoRoute(
+        path: '/tasks/all',
+        name: RouteNames.seeAllTasks,
+        builder: (context, state) => const SeeAllScreen(isProjects: false),
       ),
     ],
   );

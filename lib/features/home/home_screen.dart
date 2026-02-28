@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import 'sections/search_section.dart';
-import 'sections/project_list_section.dart';
-import 'sections/task_list_section.dart';
-import 'sections/action_area_section.dart';
+import 'sections/project_task_section.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -13,55 +12,57 @@ class HomeScreen extends StatelessWidget {
     return SafeArea(
       child: CustomScrollView(
         slivers: [
-          // App bar
+          // Greeting header
           SliverAppBar(
             floating: true,
             title: Text(
-              'BuilderVet',
-              style: Theme.of(context).textTheme.headlineMedium,
+              _greeting(),
+              style: Theme.of(context).textTheme.headlineSmall,
             ),
             actions: [
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline),
-                onPressed: () {
-                  // TODO: Create new task/project
-                },
-              ),
-              IconButton(
-                icon: const CircleAvatar(
-                  radius: 14,
-                  child: Icon(Icons.person, size: 16),
-                ),
-                onPressed: () {
+              GestureDetector(
+                onTap: () {
                   // TODO: Profile
                 },
+                child: Container(
+                  margin: const EdgeInsets.only(right: AppSpacing.md),
+                  child: CircleAvatar(
+                    radius: 18,
+                    backgroundColor: AppColors.primary,
+                    child: const Icon(Icons.person, size: 20, color: Colors.white),
+                  ),
+                ),
               ),
-              const SizedBox(width: 8),
             ],
           ),
 
-          // Sections — add/remove/reorder these as needed
-          const SliverToBoxAdapter(
+          // Sections
+          SliverToBoxAdapter(
             child: Column(
               children: [
-                SizedBox(height: AppSpacing.sm),
-                SearchSection(),
-                SizedBox(height: AppSpacing.md),
-                ProjectListSection(),
-                SizedBox(height: AppSpacing.sm),
-                TaskListSection(),
-                SizedBox(height: AppSpacing.sm),
-                ActionAreaSection(),
-                SizedBox(height: AppSpacing.xl),
+                const SizedBox(height: AppSpacing.sm),
+                const SearchSection(),
+                const SizedBox(height: AppSpacing.md),
+
+                // Combined: tab toggle → carousel → contextual actions
+                const ProjectTaskSection(),
+
+                const SizedBox(height: AppSpacing.xl),
                 // Future sections go here:
-                // RecentQuotesSection(),
+                // RecentActivitySection(),
                 // AiInsightsSection(),
-                // UpcomingDeadlinesSection(),
               ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  String _greeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning!';
+    if (hour < 17) return 'Good afternoon!';
+    return 'Good evening!';
   }
 }
