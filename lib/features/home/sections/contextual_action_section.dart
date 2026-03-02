@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../models/task.dart';
+import '../../actions/action_registry.dart';
+import '../../actions/action_router.dart';
+import '../../actions/models/custom_action.dart';
+import '../../actions/sheets/add_custom_action_sheet.dart';
 
-class ContextualActionSection extends StatelessWidget {
+class ContextualActionSection extends StatefulWidget {
   final Task? selectedTask;
 
   const ContextualActionSection({
@@ -12,9 +16,73 @@ class ContextualActionSection extends StatelessWidget {
   });
 
   @override
+  State<ContextualActionSection> createState() =>
+      _ContextualActionSectionState();
+}
+
+class _ContextualActionSectionState extends State<ContextualActionSection> {
+  /// Custom actions created by the user, keyed by taskId
+  final Map<String, List<CustomAction>> _customActions = {};
+
+  /// Get custom actions for the currently selected task
+  List<CustomAction> get _currentCustomActions {
+    if (widget.selectedTask == null) return [];
+    return _customActions[widget.selectedTask!.taskId] ?? [];
+  }
+
+  /// Show the add custom action sheet and handle the result
+  Future<void> _showAddCustomActionSheet() async {
+    final action = await showModalBottomSheet<CustomAction>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => AddCustomActionSheet(task: widget.selectedTask!),
+    );
+
+    if (action != null) {
+      setState(() {
+        _customActions
+            .putIfAbsent(action.taskId, () => [])
+            .add(action);
+      });
+      // TODO: Persist to local storage or backend
+    }
+  }
+
+  /// Delete a custom action
+  void _deleteCustomAction(CustomAction action) {
+    setState(() {
+      _customActions[action.taskId]?.remove(action);
+    });
+  }
+
+  /// Handle tap on a custom action tile
+  void _handleCustomActionTap(CustomAction action) {
+    switch (action.type) {
+      case 'web':
+        if (action.url != null && action.url!.isNotEmpty) {
+          ActionRouter.openCustomAction(context, {
+            'label': action.label,
+            'type': 'web',
+            'url': action.url,
+          }, widget.selectedTask!);
+        }
+        break;
+      case 'phone':
+        // TODO: Launch phone dialer with action.url
+        break;
+      case 'note':
+        // TODO: Open note editor
+        break;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     // No card selected — show prompt
-    if (selectedTask == null) {
+    if (widget.selectedTask == null) {
       return Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: AppSpacing.md,
@@ -42,28 +110,11 @@ class ContextualActionSection extends StatelessWidget {
       );
     }
 
-    final actions = selectedTask!.actionSpace;
+    final systemActions = widget.selectedTask!.actionSpace;
+    final customActions = _currentCustomActions;
+    // Total tiles = system actions + custom actions + 1 "Add" tile
+    final totalCount = systemActions.length + customActions.length + 1;
 
-    // Card selected but no actions available
-    if (actions.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.md,
-          vertical: AppSpacing.lg,
-        ),
-        child: Center(
-          child: Text(
-            'No actions available for this item',
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.textTertiary,
-            ),
-          ),
-        ),
-      );
-    }
-
-    // Card selected — show its actions
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
       child: Column(
@@ -82,7 +133,7 @@ class ContextualActionSection extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      selectedTask!.taskName,
+                      widget.selectedTask!.taskName,
                       style: TextStyle(
                         fontSize: 13,
                         color: AppColors.primary,
@@ -127,15 +178,36 @@ class ContextualActionSection extends StatelessWidget {
               crossAxisSpacing: AppSpacing.sm,
               childAspectRatio: 1.1,
             ),
-            itemCount: actions.length,
+            itemCount: totalCount,
             itemBuilder: (context, index) {
-              final action = actions[index];
-              return _ActionTile(
-                action: action,
-                index: index,
-                onTap: () {
-                  // TODO: Handle action
-                },
+              // System action tiles
+              if (index < systemActions.length) {
+                final actionKey = systemActions[index];
+                final config = _getActionConfig(actionKey, index);
+
+                return _ActionTile(
+                  config: config,
+                  onTap: () {
+                    _handleActionTap(context, actionKey, widget.selectedTask!);
+                  },
+                );
+              }
+
+              // Custom action tiles
+              final customIndex = index - systemActions.length;
+              if (customIndex < customActions.length) {
+                final custom = customActions[customIndex];
+
+                return _CustomActionTile(
+                  action: custom,
+                  onTap: () => _handleCustomActionTap(custom),
+                  onLongPress: () => _showCustomActionOptions(custom),
+                );
+              }
+
+              // Last tile = "+" add action
+              return _AddActionTile(
+                onTap: _showAddCustomActionSheet,
               );
             },
           ),
@@ -143,78 +215,205 @@ class ContextualActionSection extends StatelessWidget {
       ),
     );
   }
+
+  /// Show edit/delete options for a custom action
+  void _showCustomActionOptions(CustomAction action) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.textTertiary.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                action.label,
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: action.color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  ),
+                  child: Icon(action.icon, color: action.color, size: 20),
+                ),
+                title: const Text('Open Action'),
+                subtitle: Text(
+                  action.type == 'web'
+                      ? action.url ?? 'No URL'
+                      : action.type == 'phone'
+                          ? action.url ?? 'No number'
+                          : 'Note',
+                  style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _handleCustomActionTap(action);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  ),
+                  child: Icon(Icons.delete, color: AppColors.error, size: 20),
+                ),
+                title: const Text('Delete Action'),
+                subtitle: Text(
+                  'Remove this custom action',
+                  style: TextStyle(fontSize: 12, color: AppColors.textTertiary),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _confirmDelete(action);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Confirm before deleting
+  void _confirmDelete(CustomAction action) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+        ),
+        title: const Text('Delete Action?'),
+        content: Text(
+          'Remove "${action.label}" from your quick actions?',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      _deleteCustomAction(action);
+    }
+  }
+
+  /// Get config from registry, or generate fallback
+  ActionConfig _getActionConfig(String actionKey, int index) {
+    final registered = ActionRegistry.get(actionKey);
+    if (registered != null) return registered;
+
+    switch (actionKey) {
+      case 'project_detail':
+        return const ActionConfig(
+          key: 'project_detail',
+          label: 'Detail',
+          description: 'View all tasks in this project',
+          icon: Icons.list_alt,
+          color: Color(0xFF6366F1),
+          displayMode: ActionDisplayMode.fullScreen,
+          priority: 90,
+        );
+      case 'project_quote':
+        return const ActionConfig(
+          key: 'project_quote',
+          label: 'Quote',
+          description: 'Manage quotes for project tasks',
+          icon: Icons.request_quote,
+          color: Color(0xFFFF6B6B),
+          displayMode: ActionDisplayMode.fullScreen,
+          priority: 85,
+        );
+      case 'project_schedule':
+        return const ActionConfig(
+          key: 'project_schedule',
+          label: 'Schedule',
+          description: 'Manage timelines for project tasks',
+          icon: Icons.calendar_month,
+          color: Color(0xFF45B7D1),
+          displayMode: ActionDisplayMode.fullScreen,
+          priority: 80,
+        );
+      case 'project_photo':
+        return const ActionConfig(
+          key: 'project_photo',
+          label: 'Photo',
+          description: 'Upload and view project photos',
+          icon: Icons.camera_alt,
+          color: Color(0xFFFECA57),
+          displayMode: ActionDisplayMode.fullScreen,
+          priority: 75,
+        );
+      case 'project_invoice':
+        return const ActionConfig(
+          key: 'project_invoice',
+          label: 'Invoice',
+          description: 'Issue and review invoices for project tasks',
+          icon: Icons.receipt_long,
+          color: Color(0xFF6C5CE7),
+          displayMode: ActionDisplayMode.fullScreen,
+          priority: 70,
+        );
+      default:
+        return ActionRegistry.fallback(actionKey, index: index);
+    }
+  }
+
+  /// Route tap to the correct screen
+  void _handleActionTap(BuildContext context, String actionKey, Task task) {
+    if (actionKey.startsWith('project_')) {
+      ActionRouter.openProjectAction(context, actionKey, task);
+      return;
+    }
+    ActionRouter.open(context, actionKey, task);
+  }
 }
 
-// ─── Single Action Tile ──────────────────────────────────
+// ─── System Action Tile ──────────────────────────────────
 
 class _ActionTile extends StatelessWidget {
-  final String action;
-  final int index;
+  final ActionConfig config;
   final VoidCallback onTap;
 
-  const _ActionTile({
-    required this.action,
-    required this.index,
-    required this.onTap,
-  });
-
-  // Map action strings to icons and colors
-  static final _actionConfig = <String, _ActionStyle>{
-    'review_quotes': _ActionStyle(Icons.request_quote, Color(0xFFFF6B6B)),
-    'approve_material': _ActionStyle(Icons.check_box, Color(0xFF4ECDC4)),
-    'schedule_inspection': _ActionStyle(Icons.event, Color(0xFF45B7D1)),
-    'request_inspection': _ActionStyle(Icons.verified, Color(0xFF96CEB4)),
-    'upload_photo': _ActionStyle(Icons.camera_alt, Color(0xFFFECA57)),
-    'add_note': _ActionStyle(Icons.note_add, Color(0xFF9B59B6)),
-    'start_task': _ActionStyle(Icons.play_circle, Color(0xFF2ECC71)),
-    'request_quote': _ActionStyle(Icons.receipt_long, Color(0xFFE17055)),
-    'assign_contractor': _ActionStyle(Icons.person_add, Color(0xFF0984E3)),
-    'mark_complete': _ActionStyle(Icons.check_circle, Color(0xFF00B894)),
-    'report_issue': _ActionStyle(Icons.warning, Color(0xFFD63031)),
-    'confirm_materials': _ActionStyle(Icons.inventory, Color(0xFF6C5CE7)),
-    'schedule': _ActionStyle(Icons.calendar_month, Color(0xFFFD79A8)),
-    'select_material': _ActionStyle(Icons.palette, Color(0xFFE84393)),
-    'select_colour': _ActionStyle(Icons.color_lens, Color(0xFFA29BFE)),
-    'call_engineer': _ActionStyle(Icons.phone, Color(0xFF00CEC9)),
-    'approve_quote': _ActionStyle(Icons.thumb_up, Color(0xFF55A3F5)),
-    'finalise_design': _ActionStyle(Icons.design_services, Color(0xFFFF9FF3)),
-    'request_quotes': _ActionStyle(Icons.request_page, Color(0xFFFF6348)),
-    'get_planning_advice': _ActionStyle(Icons.lightbulb, Color(0xFFF9CA24)),
-    'confirm_fixtures': _ActionStyle(Icons.plumbing, Color(0xFF7ED6DF)),
-  };
-
-  // Fallback colors for unknown actions
-  static const _fallbackColors = [
-    Color(0xFF6366F1),
-    Color(0xFFEC4899),
-    Color(0xFF14B8A6),
-    Color(0xFFF97316),
-    Color(0xFF8B5CF6),
-    Color(0xFF06B6D4),
-  ];
+  const _ActionTile({required this.config, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final config = _actionConfig[action];
-    final color = config?.color ?? _fallbackColors[index % _fallbackColors.length];
-    final icon = config?.icon ?? Icons.bolt;
-
-    // Format action string: "review_quotes" → "Review Quotes"
-    final label = action
-        .split('_')
-        .map((word) => word.isNotEmpty
-            ? '${word[0].toUpperCase()}${word.substring(1)}'
-            : '')
-        .join(' ');
-
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
       child: Container(
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
+          color: config.color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-          border: Border.all(color: color.withOpacity(0.15)),
+          border: Border.all(color: config.color.withOpacity(0.15)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -222,16 +421,16 @@ class _ActionTile extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.15),
+                color: config.color.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
               ),
-              child: Icon(icon, color: color, size: 24),
+              child: Icon(config.icon, color: config.color, size: 24),
             ),
             const SizedBox(height: AppSpacing.xs),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Text(
-                label,
+                config.label,
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
@@ -249,8 +448,131 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
-class _ActionStyle {
-  final IconData icon;
-  final Color color;
-  const _ActionStyle(this.icon, this.color);
+// ─── Custom Action Tile ──────────────────────────────────
+
+class _CustomActionTile extends StatelessWidget {
+  final CustomAction action;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const _CustomActionTile({
+    required this.action,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      child: Container(
+        decoration: BoxDecoration(
+          color: action.color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          border: Border.all(color: action.color.withOpacity(0.15)),
+        ),
+        child: Stack(
+          children: [
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: action.color.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                    ),
+                    child: Icon(action.icon, color: action.color, size: 24),
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      action.label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Small indicator that this is a custom action
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: action.color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Add Action Tile (the "+" button) ────────────────────
+
+class _AddActionTile extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddActionTile({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          border: Border.all(
+            color: AppColors.textTertiary.withOpacity(0.3),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.textTertiary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+              ),
+              child: Icon(
+                Icons.add,
+                color: AppColors.textSecondary,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'Add Action',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

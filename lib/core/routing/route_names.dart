@@ -7,7 +7,6 @@ class RouteNames {
   static const String chat = 'chat';
   static const String alerts = 'alerts';
   static const String taskDetail = 'taskDetail';
-  static const String projectDetail = 'projectDetail';
   static const String conversation = 'conversation';
   static const String personDetail = 'personDetail';
   static const String seeAllProjects = 'seeAllProjects';

@@ -45,7 +45,18 @@ Currently running on **mock data** (JSON). When the backend is ready, swap one l
 ### Navigation
 
 - **GoRouter** with a `ShellRoute` for bottom navigation
-- Detail screens push on top of the shell (keeping the nav bar context)
+- Action screens and detail screens push on top of the shell
+
+### Action System
+
+Actions are the core interaction model. Each task carries an `actionSpace` — a list of action keys that determine what the user can do. Actions are resolved through a **registry + router** pattern:
+
+- **Action Registry** — single source of truth for all system action configs (icon, colour, display mode, AI metadata)
+- **Action Router** — reads registry or action type, opens the correct screen/sheet/webview
+- **Three display modes** — full screen (complex actions), bottom sheet (quick actions), web view (external services)
+- **Project actions** — projects have 5 dedicated actions (Detail, Quote, Schedule, Photo, Invoice) that each open a reusable task list, then drill into task-specific screens
+- **Custom user actions** — users can create their own actions (web links, phone calls, notes) without any code changes
+- **AI-ready** — the registry provides structured metadata (priority, requirements, descriptions) that AI agents can use to recommend and execute actions
 
 ---
 
@@ -82,14 +93,14 @@ Foundation layer — non-UI code used across the entire app.
 
 | File | Purpose | Key Features |
 |------|---------|--------------|
-| `app_router.dart` | GoRouter configuration with all routes. | `ShellRoute` wraps the 5 bottom nav tabs (Home, Network, Calendar, Chat, Alerts). Detail screens (`/task/:taskId`, `/project/:projectId`) push on top. "See all" routes (`/projects/all`, `/tasks/all`) for full list views. |
-| `route_names.dart` | Route name constants. | Avoids hardcoded strings — `RouteNames.home`, `RouteNames.taskDetail`, `RouteNames.seeAllProjects`, etc. |
+| `app_router.dart` | GoRouter configuration with all routes. | `ShellRoute` wraps the 5 bottom nav tabs. Task detail screen pushes on top. "See all" routes for full list views. Project action routes (`/actions/project-tasks/:projectId/detail|quote|schedule|invoice`). Task action routes (`/actions/task-quote/:taskId`, etc.). Project photo route. Generic web view route. |
+| `route_names.dart` | Route name constants. | `RouteNames.home`, `RouteNames.taskDetail`, `RouteNames.seeAllProjects`, `RouteNames.seeAllTasks`. |
 
 #### Theme (`lib/core/theme/`)
 
 | File | Purpose | Key Features |
 |------|---------|--------------|
-| `app_theme.dart` | `ThemeData` for light and dark modes. | Material 3, custom card theme, bottom nav bar styling, input decoration theme. |
+| `app_theme.dart` | `ThemeData` for light and dark modes. | Material 3, custom card theme (`CardThemeData`), bottom nav bar styling, input decoration theme. |
 | `app_colors.dart` | Colour palette constants. | Brand colours (primary blue, secondary purple, accent amber), background/surface colours, text colours (primary, secondary, tertiary), border colour, status colours (draft grey, pending amber, in-progress blue, completed green, cancelled red). |
 | `app_typography.dart` | Text style definitions. | Headline (large/medium/small), title (large/medium), body (large/medium/small), label (large/small) — all with consistent sizing and weights. |
 | `app_spacing.dart` | Spacing and border radius constants. | Padding/margin scale: `xs(4)`, `sm(8)`, `md(16)`, `lg(24)`, `xl(32)`, `xxl(48)`. Border radius scale: `radiusXs(4)` through `radiusFull(999)`. |
@@ -165,7 +176,7 @@ Riverpod state management — reactive data providers for the UI.
 
 ### Features (`lib/features/`)
 
-UI layer — one folder per bottom navigation tab, each composed of modular sections.
+UI layer — one folder per bottom navigation tab, plus the actions system.
 
 #### Shell (`lib/features/shell/`)
 
@@ -181,10 +192,30 @@ The main dashboard screen. Composed of modular sections.
 |------|---------|--------------|
 | `home_screen.dart` | Home tab root screen. | Greeting header ("Good morning/afternoon/evening!") with profile avatar. Composes: `SearchSection` → `ProjectTaskSection`. Uses `CustomScrollView` with `SliverAppBar`. |
 | `sections/search_section.dart` | Search bar at the top of home. | Wraps the shared `AppSearchBar` widget. Placeholder for connecting to search provider. |
-| `sections/project_task_section.dart` | **Main section** — tab toggle + carousel + contextual actions. | Animated Projects/Tasks tab toggle. Renders `_ProjectTab` or `_TaskTab` based on selection. Each tab composes `CardCarouselSection` + `ContextualActionSection`. Wires up selection providers and "See all" navigation. |
+| `sections/project_task_section.dart` | **Main section** — tab toggle + carousel + contextual actions. | Animated Projects/Tasks tab toggle. Renders `_ProjectTab` or `_TaskTab` based on selection. Each tab composes `CardCarouselSection` + `ContextualActionSection`. Wires up selection providers and "See all" navigation via `ActionRouter`. |
 | `sections/card_carousel_section.dart` | Horizontal single-card carousel with selection. | `PageView` with `viewportFraction: 0.85` showing one card at a time. Tap unselected card → confirmation dialog → selects. Tap selected card → deselection dialog → deselects. Swiping only browses (no auto-select). **Auto-snaps back** to selected card after 2 seconds of idle or when returning from another screen. Page indicator dots + "See all" link. |
-| `sections/contextual_action_section.dart` | Action tiles that change based on selected card. | When no card selected: shows "Select a card to take actions" prompt. When card selected: shows "Quick Actions" header with the selected card's name, plus a grid of action tiles from `task.actionSpace`. Each action mapped to an icon and colour. "Reorder" button placeholder. Unknown actions get fallback icons/colours. |
+| `sections/contextual_action_section.dart` | Action tiles that change based on selected card. | Reads from `ActionRegistry` for system actions. Has built-in configs for 5 project actions (Detail, Quote, Schedule, Photo, Invoice). Routes taps through `ActionRouter`. Shows selected card name in header. "Reorder" button placeholder. Fallback icons/colours for unknown actions. |
 | `see_all_screen.dart` | Full-screen list for browsing all projects or tasks. | Searchable list. Tap a card → selection confirmation dialog → selects and pops back to home. Currently selected card shown with blue border, checkmark, and "Selected" badge. Works for both projects and tasks via `isProjects` flag. |
+
+#### Actions (`lib/features/actions/`)
+
+The action system — registry, router, and all action screens.
+
+| File | Purpose | Key Features |
+|------|---------|--------------|
+| `action_registry.dart` | **Single source of truth** for all system actions. | 20 registered actions, each with: `key`, `label`, `description`, `icon`, `color`, `displayMode` (fullScreen/bottomSheet/webView), `screenType` (custom/form/confirmation/textInput/phone/web), `priority` (for AI ordering), `requiresData` (e.g. only show if task has quotes), `applicableTo` (filter by task type), `formFields` (for generic form screens), `confirmMessage`. Has `get()`, `isRegistered()`, `getByPriority()`, `taskMeetsRequirements()` methods. `fallback()` generates config for unknown actions so the app never crashes. |
+| `action_router.dart` | Routes action tile taps to the correct destination. | Handles three flows: `open()` for system actions (reads registry, opens full screen/bottom sheet/web view), `openProjectAction()` for project-specific actions (Detail/Quote/Schedule/Photo/Invoice), `openCustomAction()` for user-created actions (web/phone/note). Includes generic bottom sheets: `_ConfirmationSheet` (yes/no actions like mark complete), `_TextInputSheet` (add note), `_FormSheet` (configurable fields like schedule inspection), `_PhoneSheet` (pick a participant to call), `_PlaceholderSheet` (coming soon fallback). |
+
+##### Action Screens (`lib/features/actions/screens/`)
+
+| File | Purpose | Key Features |
+|------|---------|--------------|
+| `project_task_list_screen.dart` | **Reusable** task list for project actions. | One screen, four modes via `TaskListMode` enum: detail, quote, schedule, invoice. Shows project's subtasks with mode-specific secondary info (descriptions for detail, quote counts for quote, duration for schedule, pricing for invoice). Tap a task → navigates to the mode-specific destination screen. Searchable. Used by all project actions except Photo. |
+| `task_quote_screen.dart` | Quote management for a single task. | Task header with status. AI guide price card. Quote list with contractor avatars, amounts, descriptions, time-ago timestamps. Comparison to guide price (% above/below). Quote status badges (pending/accepted/rejected). Accept/reject buttons on pending quotes. "Request" button for new quotes. Empty state when no quotes exist. |
+| `task_schedule_screen.dart` | Schedule management for a single task. | Start/end date cards with edit buttons. Duration indicator between dates. Progress card with percentage, progress bar, and remaining days. Overdue detection (red). Assigned participants chip list. "Reschedule" and "Add to Calendar" action buttons. |
+| `task_invoice_screen.dart` | Invoice management for a single task. | Adapts to invoice state: no invoice (create button), draft (edit/send), issued (mark paid/send reminder), paid (download receipt). Invoice status card with state-specific icon, colour, and message. Cost breakdown showing guide price and accepted quote. Reads invoice state from `task.metadata['invoice']`. |
+| `project_photo_screen.dart` | Photo gallery for a project. | Two sections: project-level photos (before/after) and task-level photos (grouped by subtask). Upload bottom sheet with three options: camera, gallery, files. Each subtask has its own "Add" button. FAB for quick photo upload. Empty states for all sections. |
+| `web_view_screen.dart` | Generic in-app browser for web actions. | Placeholder screen showing URL and "Open in Browser" button. Ready to upgrade to real `WebView` with `webview_flutter` package. Used for actions like "Shop Materials" (Screwfix), "Select Colour" (Dulux), "Planning Advice" (Planning Portal). |
 
 #### Network (`lib/features/network/`)
 
@@ -215,12 +246,9 @@ The main dashboard screen. Composed of modular sections.
 
 #### Detail Screens (`lib/features/detail_screens/`)
 
-Pushed on top of the navigation shell when drilling into a specific item.
-
 | File | Purpose | Key Features |
 |------|---------|--------------|
-| `task_detail_screen.dart` | Full task detail view. | Header with task name + status badge. Description, timeline, duration, AI guide price, accepted quote. Quotes section listing all quotes with contractor name, amount, and description. Participants section with role icons. Action chips from `actionSpace`. Edit button. |
-| `project_detail_screen.dart` | Project detail with subtasks. | Project header with stats (guide price, timeline, duration). Subtask list using `TaskCard` widgets. FAB for adding new tasks. Connected to `projectTasksProvider`. |
+| `task_detail_screen.dart` | Full task detail view. | Header with task name + status badge. Description, timeline, duration, AI guide price, accepted quote. Quotes section listing all quotes with contractor name, amount, and description. Participants section with role icons. Action chips from `actionSpace`. Edit button. Used from both `/task/:taskId` route and the project Detail action's task list. |
 
 ---
 
@@ -233,7 +261,7 @@ Reusable UI components used across multiple features.
 | File | Purpose | Key Features |
 |------|---------|--------------|
 | `project_card.dart` | Card for displaying a project (meta task). | Shows initial letter, status badge, description, date chip, guide price. Blue border highlight for in-progress projects. Accepts `onTap` callback. Used in carousel and can be reused anywhere. |
-| `task_card.dart` | Card for displaying a regular task. | Shows task name, description, status badge, date range, guide price, participant count, pending quote indicator. Used in project detail screen. |
+| `task_card.dart` | Card for displaying a regular task. | Shows task name, description, status badge, date range, guide price, participant count, pending quote indicator. |
 
 #### Badges (`lib/shared/widgets/badges/`)
 
@@ -265,7 +293,7 @@ Reusable UI components used across multiple features.
 
 | File | Purpose |
 |------|---------|
-| `assets/data/mock_tasks.json` | 13 dummy tasks: 3 projects (Kitchen Renovation, Bathroom Refurbishment, Garden Landscaping), 8 project subtasks, 2 standalone tasks (Emergency Boiler Repair, Living Room Painting). Covers all statuses, multiple quotes, various participant roles, and flexible metadata. |
+| `assets/data/mock_tasks.json` | 13 dummy tasks: 3 projects (Kitchen Renovation, Bathroom Refurbishment, Garden Landscaping) with project-specific actions (Detail, Quote, Schedule, Photo, Invoice), 8 project subtasks with task-specific actions, 2 standalone tasks (Emergency Boiler Repair, Living Room Painting). Covers all statuses, multiple quotes, various participant roles, and flexible metadata. |
 
 ---
 
@@ -302,6 +330,57 @@ Emergency Boiler Repair (task, parentTaskId: null — standalone)
 
 ---
 
+## Action System
+
+### How It Works
+
+```
+User selects a card on home screen
+  → actionSpace loaded (e.g. ["project_detail", "project_quote", ...])
+  → Each action key resolved via ActionRegistry or project action config
+  → Tiles rendered with icon, colour, label
+  → User taps a tile
+  → ActionRouter decides: full screen / bottom sheet / web view
+  → Correct screen or sheet opens
+```
+
+### Action Types
+
+| Type | Display Mode | Examples | Needs Compilation? |
+|------|-------------|----------|-------------------|
+| System (registered) | Full screen | Review Quotes, Assign Contractor | Yes — custom Flutter UI |
+| System (registered) | Bottom sheet | Add Note, Mark Complete, Schedule | Yes — but uses generic reusable sheets |
+| System (registered) | Web view | Shop Materials, Select Colour | No — just a URL |
+| Project-specific | Full screen | Detail, Quote, Schedule, Photo, Invoice | Yes — built once, reusable |
+| Custom (user-created) | Web/phone/note | User's bookmarks, links, contacts | No — never needs compilation |
+
+### Adding a New Action
+
+**System action with custom UI:**
+1. Add entry to `action_registry.dart`
+2. Build the screen/sheet in `lib/features/actions/screens/`
+3. Add route in `action_router.dart`
+4. Requires app update
+
+**System action with generic UI (form, confirmation):**
+1. Add entry to `action_registry.dart` with `screenType: form/confirmation`
+2. Configure `formFields` or `confirmMessage`
+3. No new screen needed — reuses generic sheets
+4. Requires app update (but minimal code change)
+
+**Web action:**
+1. Build the web page on your server
+2. Add entry to `action_registry.dart` with `displayMode: webView` and `url`
+3. No custom screen needed
+4. Web page can be updated without app release
+
+**Custom user action:**
+1. User taps "+" on action area
+2. Enters label, picks icon, enters URL/phone
+3. No code changes, no app update, no registration
+
+---
+
 ## Switching to Real Backend
 
 1. Set `useMockData` to `false` in `lib/core/config/app_config.dart`
@@ -321,11 +400,32 @@ Emergency Boiler Repair (task, parentTaskId: null — standalone)
 - "See all" full-screen list with search and selection
 - Auto-snap-back to selected card
 
-### Phase 3 — Other Tabs (Current)
+### Phase 3 — Action System ✅
+- Action Registry with 20 registered system actions
+- Action Router with full screen / bottom sheet / web view routing
+- Project actions: Detail, Quote, Schedule, Photo, Invoice
+- Reusable project task list screen with 4 modes
+- Task quote screen with comparison and accept/reject
+- Task schedule screen with progress tracking
+- Task invoice screen with lifecycle states
+- Project photo screen with upload options
+- Generic web view screen
+- Generic bottom sheets: confirmation, text input, form, phone, placeholder
+
+### Phase 4 — Other Tabs ✅
 - Network, Calendar, Chat, Alerts screens with mock data
 
-### Phase 4 — Polish & UX
+### Phase 5 — Polish & UX
 - Loading skeletons, animations, pull-to-refresh, error handling
+- Custom user action creation ("+") button and bottom sheet
+- Action reordering
 
-### Phase 5 — Connect Real Backend
+### Phase 6 — Connect Real Backend
 - Implement API repositories, authentication, push notifications
+- Move action registry to backend config API
+- Real WebView integration (`webview_flutter`)
+
+### Phase 7 — AI Integration
+- AI agent reads ActionRegistry to recommend actions
+- AI-powered action ordering based on task state and priority
+- AI project manager suggestions ("You have 3 quotes to review")
