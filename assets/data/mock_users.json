@@ -1,0 +1,49 @@
+{
+  "users": [
+    {
+      "userId": "usr-001",
+      "name": "Alice Chen",
+      "email": "alice@example.com",
+      "password": "password123",
+      "role": "homeowner",
+      "phone": "+44 7700 100001",
+      "company": null
+    },
+    {
+      "userId": "usr-002",
+      "name": "Bob Martinez",
+      "email": "bob@example.com",
+      "password": "password123",
+      "role": "contractor",
+      "phone": "+44 7700 100002",
+      "company": "Martinez Building Co."
+    },
+    {
+      "userId": "usr-003",
+      "name": "Claire Wright",
+      "email": "claire@example.com",
+      "password": "password123",
+      "role": "designer",
+      "phone": "+44 7700 100003",
+      "company": "Wright Interiors"
+    },
+    {
+      "userId": "usr-004",
+      "name": "Dave Kowalski",
+      "email": "dave@example.com",
+      "password": "password123",
+      "role": "electrician",
+      "phone": "+44 7700 100004",
+      "company": "SparkRight Electrical"
+    },
+    {
+      "userId": "usr-005",
+      "name": "Emma Patel",
+      "email": "emma@example.com",
+      "password": "password123",
+      "role": "plumber",
+      "phone": "+44 7700 100005",
+      "company": "AquaFix Plumbing"
+    }
+  ]
+}

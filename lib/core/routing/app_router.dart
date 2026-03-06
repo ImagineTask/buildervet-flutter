@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'route_names.dart';
 import '../../features/shell/app_shell.dart';
+import '../../features/auth/login_screen.dart';
+import '../../features/ai/ai_request_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/network/network_screen.dart';
 import '../../features/calendar/calendar_screen.dart';
 import '../../features/chat/chat_screen.dart';
 import '../../features/alerts/alerts_screen.dart';
+import '../../providers/auth_provider.dart';
 import '../../features/detail_screens/task_detail_screen.dart';
 import '../../features/home/see_all_screen.dart';
 import '../../features/actions/screens/project_task_list_screen.dart';
@@ -18,9 +21,38 @@ import '../../features/actions/screens/project_photo_screen.dart';
 import '../../features/actions/screens/web_view_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final authState = ref.watch(authStateProvider);
+
   return GoRouter(
-    initialLocation: '/home',
+    initialLocation: '/login',
+    redirect: (context, state) {
+      final isLoggedIn = authState.valueOrNull != null;
+      final isLoading = authState.isLoading;
+      final isOnLogin = state.matchedLocation == '/login';
+
+      // Still loading auth state, don't redirect
+      if (isLoading) return null;
+
+      // Not logged in and not on login page -> go to login
+      if (!isLoggedIn && !isOnLogin) return '/login';
+      // Logged in and on login page -> go to home
+      if (isLoggedIn && isOnLogin) return '/home';
+      // Otherwise stay
+      return null;
+    },
     routes: [
+      // Login
+      GoRoute(
+        path: '/login',
+        name: RouteNames.login,
+        builder: (context, state) => const LoginScreen(),
+      ),
+      // AI request screen
+      GoRoute(
+        path: '/ai-request',
+        name: RouteNames.aiRequest,
+        builder: (context, state) => const AiRequestScreen(),
+      ),
       // ─── Shell with bottom nav ──────────────────────────
       ShellRoute(
         builder: (context, state, child) => AppShell(child: child),
