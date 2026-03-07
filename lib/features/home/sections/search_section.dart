@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import '../../../shared/widgets/inputs/app_search_bar.dart';
 
 class SearchSection extends StatelessWidget {
@@ -7,10 +8,9 @@ class SearchSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppSearchBar(
-      hintText: 'Search tasks, projects, people...',
-      onChanged: (query) {
-        // TODO: Connect to search provider
-      },
+      hintText: 'What do you need done?',
+      readOnly: true,
+      onTap: () => context.push('/ai-request'),
     );
   }
 }
