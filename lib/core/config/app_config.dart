@@ -4,8 +4,9 @@ class AppConfig {
   /// Set to false when real backend is ready
   static const bool useMockData = true;
 
-  /// API base URL (used when useMockData is false)
-  static const String apiBaseUrl = 'https://api.renovation-app.com/v1';
+  /// API base URL
+  static const String apiBaseUrl =
+      'https://imaginetask-engine-v1-268920641222.europe-west2.run.app/api/v1';
 
   /// App info
   static const String appName = 'BuilderVet';

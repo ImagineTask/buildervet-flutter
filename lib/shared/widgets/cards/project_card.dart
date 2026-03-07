@@ -3,44 +3,61 @@ import '../../../models/task.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/currency_utils.dart';
+import '../../../core/utils/date_utils.dart';
 import '../badges/status_badge.dart';
 
 class ProjectCard extends StatelessWidget {
   final Task project;
-  final int subtaskCount;
   final VoidCallback? onTap;
 
   const ProjectCard({
     super.key,
     required this.project,
-    this.subtaskCount = 0,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(right: AppSpacing.md),
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.xs,
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
         child: Container(
-          width: 260,
+          width: double.infinity,
           padding: const EdgeInsets.all(AppSpacing.md),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+            border: Border.all(
+              color: project.status.name == 'inProgress'
+                  ? AppColors.primary.withOpacity(0.4)
+                  : AppColors.border,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Top row: initial + status
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(AppSpacing.sm),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-                    ),
-                    child: const Icon(
-                      Icons.folder_outlined,
-                      size: 20,
+                  Text(
+                    project.taskName.isNotEmpty
+                        ? project.taskName[0].toUpperCase()
+                        : '?',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                       color: AppColors.primary,
                     ),
                   ),
@@ -49,39 +66,65 @@ class ProjectCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.sm),
-              Text(
-                project.taskName,
-                style: Theme.of(context).textTheme.titleLarge,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: AppSpacing.xs),
+
+              // Description
               Text(
                 project.description,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textSecondary,
                     ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              const Spacer(),
+              const SizedBox(height: AppSpacing.md),
+
+              // Bottom row: date + price
               Row(
                 children: [
-                  if (project.guidePrice != null)
-                    Text(
-                      CurrencyUtils.formatPriceCompact(project.guidePrice!),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.sm,
+                      vertical: AppSpacing.xs,
                     ),
-                  const Spacer(),
-                  Text(
-                    '$subtaskCount tasks',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: AppColors.textTertiary,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight,
+                      borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.schedule, size: 14, color: AppColors.textTertiary),
+                        const SizedBox(width: 4),
+                        Text(
+                          DateUtils2.formatDateTime(project.startTime),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
                         ),
+                      ],
+                    ),
                   ),
+                  const Spacer(),
+                  if (project.guidePrice != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: AppSpacing.xs,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(AppSpacing.radiusXs),
+                      ),
+                      child: Text(
+                        CurrencyUtils.formatPriceCompact(project.guidePrice!),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ],

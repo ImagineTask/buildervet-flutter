@@ -2,6 +2,7 @@ import 'enums/task_type.dart';
 import 'enums/task_status.dart';
 import 'quote.dart';
 import 'participant.dart';
+import 'task_event.dart';
 
 class Task {
   final String taskId;
@@ -16,6 +17,7 @@ class Task {
   final double? guidePrice;
   final List<Quote> quotes;
   final List<Participant> participants;
+  final List<TaskEvent> events;
   final Map<String, dynamic> metadata;
 
   const Task({
@@ -31,16 +33,14 @@ class Task {
     this.guidePrice,
     this.quotes = const [],
     this.participants = const [],
+    this.events = const [],
     this.metadata = const {},
   });
 
-  /// Whether this task is a project (meta task)
   bool get isProject => taskType == TaskType.project;
 
-  /// Whether this task belongs to a project
   bool get hasParent => parentTaskId != null;
 
-  /// The accepted quote, if any
   Quote? get acceptedQuote {
     try {
       return quotes.firstWhere((q) => q.status.name == 'accepted');
@@ -49,12 +49,24 @@ class Task {
     }
   }
 
-  /// Number of pending quotes
   int get pendingQuoteCount =>
       quotes.where((q) => q.status.name == 'pending').length;
 
-  /// Duration in days
   int get durationDays => endTime.difference(startTime).inDays;
+
+  /// Events sorted newest first
+  List<TaskEvent> get eventsSorted {
+    final sorted = List<TaskEvent>.from(events);
+    sorted.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return sorted;
+  }
+
+  /// Events sorted oldest first (chronological)
+  List<TaskEvent> get eventsChronological {
+    final sorted = List<TaskEvent>.from(events);
+    sorted.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return sorted;
+  }
 
   factory Task.fromJson(Map<String, dynamic> json) {
     return Task(
@@ -76,6 +88,10 @@ class Task {
               ?.map((p) => Participant.fromJson(p as Map<String, dynamic>))
               .toList() ??
           [],
+      events: (json['events'] as List<dynamic>?)
+              ?.map((e) => TaskEvent.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
       metadata: Map<String, dynamic>.from(json['metadata'] ?? {}),
     );
   }
@@ -94,6 +110,7 @@ class Task {
       'guidePrice': guidePrice,
       'quotes': quotes.map((q) => q.toJson()).toList(),
       'participants': participants.map((p) => p.toJson()).toList(),
+      'events': events.map((e) => e.toJson()).toList(),
       'metadata': metadata,
     };
   }
@@ -111,6 +128,7 @@ class Task {
     double? guidePrice,
     List<Quote>? quotes,
     List<Participant>? participants,
+    List<TaskEvent>? events,
     Map<String, dynamic>? metadata,
   }) {
     return Task(
@@ -126,6 +144,7 @@ class Task {
       guidePrice: guidePrice ?? this.guidePrice,
       quotes: quotes ?? this.quotes,
       participants: participants ?? this.participants,
+      events: events ?? this.events,
       metadata: metadata ?? this.metadata,
     );
   }

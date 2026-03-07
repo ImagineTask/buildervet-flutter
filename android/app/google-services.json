@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "268920641222",
+    "project_id": "imaginetask-engine",
+    "storage_bucket": "imaginetask-engine.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:268920641222:android:ef30ee3c7b45e361b8a9c7",
+        "android_client_info": {
+          "package_name": "com.buildervet.buildervet_temp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "268920641222-h7crv8rdqsg2d0e65014itu3dc3uhum7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbLb4f9BEm_qRzcJxOUUbLBV0XEQ2HjfM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "268920641222-h7crv8rdqsg2d0e65014itu3dc3uhum7.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "268920641222-1b7cc3lbsj2d163dnk7c6mu5f01mleqq.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.buildervet.buildervetTemp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
