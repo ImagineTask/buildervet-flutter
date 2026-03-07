@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/utils/currency_utils.dart';
 import '../../../core/utils/date_utils.dart';
 import '../../../models/task.dart';
+import '../../../providers/task_provider.dart';
 import '../../../shared/widgets/badges/status_badge.dart';
 
-class CardCarouselSection extends StatefulWidget {
+class CardCarouselSection extends ConsumerStatefulWidget {
   final List<Task> items;
   final String? selectedId;
   final ValueChanged<String?> onSelect;
@@ -21,14 +23,13 @@ class CardCarouselSection extends StatefulWidget {
   });
 
   @override
-  State<CardCarouselSection> createState() => _CardCarouselSectionState();
+  ConsumerState<CardCarouselSection> createState() => _CardCarouselSectionState();
 }
 
-class _CardCarouselSectionState extends State<CardCarouselSection>
+class _CardCarouselSectionState extends ConsumerState<CardCarouselSection>
     with WidgetsBindingObserver {
   late PageController _pageController;
   int _currentPage = 0;
-  bool _userIsSwiping = false;
 
   int _findSelectedIndex() {
     if (widget.selectedId == null) return 0;
@@ -49,7 +50,6 @@ class _CardCarouselSectionState extends State<CardCarouselSection>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When app resumes, snap back to selected card
     if (state == AppLifecycleState.resumed) {
       _snapToSelected();
     }
@@ -58,13 +58,11 @@ class _CardCarouselSectionState extends State<CardCarouselSection>
   @override
   void didUpdateWidget(CardCarouselSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // If selection changed (e.g. from "See all" screen), scroll to it
     if (widget.selectedId != oldWidget.selectedId && widget.selectedId != null) {
       _snapToSelected();
     }
   }
 
-  /// Animate the carousel back to the selected card
   void _snapToSelected() {
     if (widget.selectedId == null) return;
     final targetIndex = _findSelectedIndex();
@@ -77,8 +75,6 @@ class _CardCarouselSectionState extends State<CardCarouselSection>
     }
   }
 
-  /// Called when user stops swiping — if there's a selected card,
-  /// snap back after a short delay
   void _onScrollEnd() {
     if (widget.selectedId != null && _currentPage != _findSelectedIndex()) {
       Future.delayed(const Duration(seconds: 2), () {
@@ -96,166 +92,54 @@ class _CardCarouselSectionState extends State<CardCarouselSection>
     super.dispose();
   }
 
-  /// Show confirmation dialog before selecting a card
-  Future<void> _confirmSelection(Task task) async {
-    final confirmed = await showDialog<bool>(
+  void _showCardOptions(Task task) {
+    final isSelected = task.taskId == widget.selectedId;
+
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                task.isProject ? Icons.folder : Icons.task_alt,
-                color: AppColors.primary,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Select ${task.isProject ? "Project" : "Task"}?',
-                style: const TextStyle(fontSize: 18),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              task.taskName,
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              task.description,
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 14,
-              ),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.schedule, size: 14, color: AppColors.textTertiary),
-                const SizedBox(width: 4),
-                Text(
-                  DateUtils2.dateRange(task.startTime, task.endTime),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textTertiary,
-                  ),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(
+                  isSelected ? Icons.deselect : Icons.check_circle_outline,
+                  color: AppColors.primary,
                 ),
-                if (task.guidePrice != null) ...[
-                  const Spacer(),
-                  Text(
-                    CurrencyUtils.formatPriceCompact(task.guidePrice!),
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ],
+                title: Text(isSelected ? 'Deselect' : 'Select'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  widget.onSelect(isSelected ? null : task.taskId);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.archive_outlined, color: AppColors.textSecondary),
+                title: const Text('Archive'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ref.read(archiveTaskProvider)(task.taskId);
+                  widget.onSelect(null);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete_outline, color: AppColors.error),
+                title: Text('Delete', style: TextStyle(color: AppColors.error)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ref.read(deleteTaskProvider)(task.taskId);
+                  widget.onSelect(null);
+                },
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Select'),
-          ),
-        ],
       ),
     );
-
-    if (confirmed == true) {
-      widget.onSelect(task.taskId);
-    }
-  }
-
-  /// Show confirmation dialog before deselecting a card
-  Future<void> _confirmDeselection(Task task) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        ),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.error.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.deselect,
-                color: AppColors.error,
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Deselect this item?',
-                style: TextStyle(fontSize: 18),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          'You are about to deselect "${task.taskName}". The quick actions for this item will be hidden.',
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 14,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              'Keep selected',
-              style: TextStyle(color: AppColors.primary),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
-            child: const Text('Deselect'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      widget.onSelect(null);
-    }
   }
 
   @override
@@ -280,7 +164,6 @@ class _CardCarouselSectionState extends State<CardCarouselSection>
 
     return Column(
       children: [
-        // Carousel
         SizedBox(
           height: 200,
           child: NotificationListener<ScrollNotification>(
@@ -301,13 +184,7 @@ class _CardCarouselSectionState extends State<CardCarouselSection>
                 final isSelected = item.taskId == widget.selectedId;
 
                 return GestureDetector(
-                  onTap: () {
-                    if (isSelected) {
-                      _confirmDeselection(item);
-                    } else {
-                      _confirmSelection(item);
-                    }
-                  },
+                  onTap: () => _showCardOptions(item),
                   child: _CarouselCard(
                     task: item,
                     isSelected: isSelected,
@@ -318,13 +195,10 @@ class _CardCarouselSectionState extends State<CardCarouselSection>
           ),
         ),
         const SizedBox(height: AppSpacing.sm),
-
-        // Page indicator dots + See all
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
           child: Row(
             children: [
-              // Dots
               if (widget.items.length > 1)
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -348,7 +222,6 @@ class _CardCarouselSectionState extends State<CardCarouselSection>
                   ),
                 ),
               const Spacer(),
-              // See all
               TextButton(
                 onPressed: widget.onSeeAll,
                 child: Row(
@@ -419,7 +292,6 @@ class _CarouselCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top row: initial + status/selected
           Row(
             children: [
               Text(
@@ -445,8 +317,6 @@ class _CarouselCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-
-          // Task name (shown when selected for clarity)
           if (isSelected)
             Text(
               task.taskName,
@@ -458,8 +328,6 @@ class _CarouselCard extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-
-          // Description
           Text(
             task.description,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -469,11 +337,8 @@ class _CarouselCard extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           const Spacer(),
-
-          // Bottom row: date + selected badge / price
           Row(
             children: [
-              // Date chip
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppSpacing.sm,
@@ -523,7 +388,6 @@ class _CarouselCard extends StatelessWidget {
                   ),
                 )
               else
-                // Tap hint for unselected cards
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.sm,

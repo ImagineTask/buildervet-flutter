@@ -32,37 +32,41 @@ class ActionRouter {
     }
   }
 
-  /// Open a project-specific action (Detail, Quote, Schedule, Photo, Invoice)
+  /// Open a project-specific action.
+  /// Handles both legacy 'project_*' keys and the backend's action space keys.
   static void openProjectAction(
     BuildContext context,
     String actionKey,
     Task project,
   ) {
     switch (actionKey) {
+      // ── Backend project_action_space keys ──────────────
+      case 'view_tasks':
       case 'project_detail':
-        context.push(
-          '/actions/project-tasks/${project.taskId}/detail',
-        );
+        context.push('/actions/project-tasks/${project.taskId}/detail');
         break;
+      case 'review_quotes':
       case 'project_quote':
-        context.push(
-          '/actions/project-tasks/${project.taskId}/quote',
-        );
+        context.push('/actions/project-tasks/${project.taskId}/quote');
         break;
+      case 'schedule_work':
       case 'project_schedule':
-        context.push(
-          '/actions/project-tasks/${project.taskId}/schedule',
-        );
+        context.push('/actions/project-tasks/${project.taskId}/schedule');
         break;
+      case 'upload_photo':
       case 'project_photo':
-        context.push(
-          '/actions/project-photo/${project.taskId}',
-        );
+        context.push('/actions/project-photo/${project.taskId}');
         break;
+      case 'create_invoice':
       case 'project_invoice':
-        context.push(
-          '/actions/project-tasks/${project.taskId}/invoice',
-        );
+        context.push('/actions/project-tasks/${project.taskId}/invoice');
+        break;
+      case 'view_progress':
+        context.push('/actions/task-progress/${project.taskId}');
+        break;
+      case 'manage_team':
+        // TODO: Build team management screen
+        _openPlaceholder(context, actionKey, project);
         break;
       default:
         // Fall back to regular action handling
@@ -106,6 +110,17 @@ class ActionRouter {
   ) {
     // Route to the specific screen based on action key
     switch (config.key) {
+      // ── View / navigation ──────────────────────────────
+      case 'view_details':
+        context.push('/tasks/${task.taskId}');
+        break;
+      case 'view_tasks':
+        context.push('/actions/project-tasks/${task.taskId}/detail');
+        break;
+      case 'view_progress':
+        context.push('/actions/task-progress/${task.taskId}');
+        break;
+      // ── Quotes ────────────────────────────────────────
       case 'review_quotes':
         context.push('/actions/task-quote/${task.taskId}');
         break;
@@ -114,10 +129,17 @@ class ActionRouter {
         // TODO: Build request quote screen
         _openPlaceholder(context, config.key, task);
         break;
+      // ── Invoice ───────────────────────────────────────
+      case 'create_invoice':
+        context.push('/actions/task-invoice/${task.taskId}');
+        break;
+      // ── People ────────────────────────────────────────
       case 'assign_contractor':
-        // TODO: Build assign contractor screen
+      case 'manage_team':
+        // TODO: Build assign/team management screen
         _openPlaceholder(context, config.key, task);
         break;
+      // ── Other custom screens ──────────────────────────
       case 'report_issue':
         // TODO: Build report issue screen
         _openPlaceholder(context, config.key, task);

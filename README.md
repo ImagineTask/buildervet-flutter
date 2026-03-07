@@ -2,6 +2,10 @@
 
 A renovation platform for managing tasks, projects, contractors, and quotes. Built with Flutter for iOS and Android.
 
+**Repositories**
+- **Frontend (this repo):** `https://github.com/ImagineTask/buildervet-flutter`
+- **Backend:** `https://github.com/ImagineTask/imaginetask-engine`
+
 ## Getting Started
 
 ### Prerequisites
@@ -54,9 +58,103 @@ Actions are the core interaction model. Each task carries an `actionSpace` — a
 - **Action Registry** — single source of truth for all system action configs (icon, colour, display mode, AI metadata)
 - **Action Router** — reads registry or action type, opens the correct screen/sheet/webview
 - **Three display modes** — full screen (complex actions), bottom sheet (quick actions), web view (external services)
-- **Project actions** — projects have 5 dedicated actions (Detail, Quote, Schedule, Photo, Invoice) that each open a reusable task list, then drill into task-specific screens
+- **Project actions** — projects have dedicated actions (View Tasks, Review Quotes, View Progress, Manage Team, Create Invoice) that each open a reusable task list, then drill into task-specific screens
 - **Custom user actions** — users can create their own actions (web links, phone calls, notes) without any code changes
 - **AI-ready** — the registry provides structured metadata (priority, requirements, descriptions) that AI agents can use to recommend and execute actions
+
+---
+
+## Backend
+
+The backend is a Python/FastAPI service at [`github.com/ImagineTask/imaginetask-engine`](https://github.com/ImagineTask/imaginetask-engine).
+
+### Architecture
+
+```
+app/
+├── main.py                         # FastAPI entry point
+├── core/
+│   ├── orchestrator.py             # Central pipeline: prompt → AI → normalise → DB
+│   ├── exceptions.py
+│   ├── logger.py                   # Loguru with rotation and compression
+│   └── middleware.py               # Request/response lifecycle logging
+├── api/routes/
+│   ├── tasks.py                    # Task generation and retrieval endpoints
+│   ├── translate.py                # Translation endpoint
+│   └── health.py
+├── services/
+│   ├── ai/
+│   │   ├── gateway.py              # Provider-agnostic AI gateway
+│   │   ├── base_provider.py        # Abstract provider interface
+│   │   └── providers/              # OpenAI, Anthropic, Google
+│   ├── database/
+│   │   ├── base_repository.py      # Abstract DB interface
+│   │   └── repositories/           # Firestore (live), memory (dev/test)
+│   ├── templates/
+│   │   ├── engine.py               # YAML template loader
+│   │   └── library/renovation.yaml # Task template defining actionSpace
+│   └── prompts/
+│       ├── manager.py              # Prompt builder with Jinja2
+│       └── library/task_generation.yaml
+└── models/
+    ├── task.py                     # Request/response Pydantic models
+    └── translate.py
+```
+
+### Key Concepts
+
+**Everything is a Task.** A project is a task with `taskType: "project"`. Subtasks point to it via `parentTaskId`. All documents live in a flat `tasks/` Firestore collection.
+
+**AI Gateway.** Provider-agnostic layer — swap between OpenAI, Anthropic, and Google with a single environment variable. Providers without API keys are silently skipped at startup.
+
+**Template + Prompt separation.** The `actionSpace` for each task type is defined in YAML templates, not code. Adding a new task category or changing available actions requires no Python changes.
+
+**Repository pattern.** The database layer uses an abstract interface. Swap from Firestore to PostgreSQL without touching any business logic.
+
+### API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/v1/tasks/generate` | Generate a project + tasks from a natural language description |
+| `GET` | `/api/v1/tasks/project/{project_id}` | Get a project and all its subtasks |
+| `GET` | `/api/v1/tasks/task/{task_id}` | Get a single task with its events |
+| `GET` | `/api/v1/tasks/user/{user_id}` | Get all projects and tasks for a user |
+| `POST` | `/api/v1/translate` | Translate text via configured provider |
+| `GET` | `/health` | Health check |
+
+### Task Generation Pipeline
+
+```
+POST /api/v1/tasks/generate
+  { "userId": "u1", "context": "I need a full kitchen renovation", "template": "renovation" }
+
+  1. Template engine  →  loads renovation.yaml, resolves prompt name + variant
+  2. Prompt manager   →  builds system + user messages with Jinja2 variables
+  3. AI gateway       →  calls default provider (OpenAI / Anthropic / Google)
+  4. Orchestrator     →  parses JSON response, normalises camelCase + snake_case fields
+  5. Database         →  writes project task, then subtasks to tasks/ collection
+  6. Events           →  creates task_created event in tasks/{id}/events subcollection
+
+  Response: { project_id, project_name, task_ids, tasks_count, provider_used }
+```
+
+### Quick Start (Backend)
+
+```bash
+git clone https://github.com/ImagineTask/imaginetask-engine.git
+cd imaginetask-engine
+cp .env.example .env
+# Fill in OPENAI_API_KEY (or ANTHROPIC_API_KEY / GOOGLE_API_KEY)
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+# Docs at http://localhost:8000/docs
+```
+
+### Deploy to Cloud Run
+
+```bash
+gcloud run deploy imaginetask-engine --source . --region europe-west2
+```
 
 ---
 
@@ -194,7 +292,7 @@ The main dashboard screen. Composed of modular sections.
 | `sections/search_section.dart` | Search bar at the top of home. | Wraps the shared `AppSearchBar` widget. Placeholder for connecting to search provider. |
 | `sections/project_task_section.dart` | **Main section** — tab toggle + carousel + contextual actions. | Animated Projects/Tasks tab toggle. Renders `_ProjectTab` or `_TaskTab` based on selection. Each tab composes `CardCarouselSection` + `ContextualActionSection`. Wires up selection providers and "See all" navigation via `ActionRouter`. |
 | `sections/card_carousel_section.dart` | Horizontal single-card carousel with selection. | `PageView` with `viewportFraction: 0.85` showing one card at a time. Tap unselected card → confirmation dialog → selects. Tap selected card → deselection dialog → deselects. Swiping only browses (no auto-select). **Auto-snaps back** to selected card after 2 seconds of idle or when returning from another screen. Page indicator dots + "See all" link. |
-| `sections/contextual_action_section.dart` | Action tiles that change based on selected card. | Reads from `ActionRegistry` for system actions. Has built-in configs for 5 project actions (Detail, Quote, Schedule, Photo, Invoice). Routes taps through `ActionRouter`. Shows selected card name in header. "Reorder" button placeholder. Fallback icons/colours for unknown actions. |
+| `sections/contextual_action_section.dart` | Action tiles that change based on selected card. | Reads from `ActionRegistry` for system actions. Routes taps through `ActionRouter`. Shows selected card name in header. "Reorder" button placeholder. Fallback icons/colours for unknown actions. |
 | `see_all_screen.dart` | Full-screen list for browsing all projects or tasks. | Searchable list. Tap a card → selection confirmation dialog → selects and pops back to home. Currently selected card shown with blue border, checkmark, and "Selected" badge. Works for both projects and tasks via `isProjects` flag. |
 
 #### Actions (`lib/features/actions/`)
@@ -203,8 +301,8 @@ The action system — registry, router, and all action screens.
 
 | File | Purpose | Key Features |
 |------|---------|--------------|
-| `action_registry.dart` | **Single source of truth** for all system actions. | 20 registered actions, each with: `key`, `label`, `description`, `icon`, `color`, `displayMode` (fullScreen/bottomSheet/webView), `screenType` (custom/form/confirmation/textInput/phone/web), `priority` (for AI ordering), `requiresData` (e.g. only show if task has quotes), `applicableTo` (filter by task type), `formFields` (for generic form screens), `confirmMessage`. Has `get()`, `isRegistered()`, `getByPriority()`, `taskMeetsRequirements()` methods. `fallback()` generates config for unknown actions so the app never crashes. |
-| `action_router.dart` | Routes action tile taps to the correct destination. | Handles three flows: `open()` for system actions (reads registry, opens full screen/bottom sheet/web view), `openProjectAction()` for project-specific actions (Detail/Quote/Schedule/Photo/Invoice), `openCustomAction()` for user-created actions (web/phone/note). Includes generic bottom sheets: `_ConfirmationSheet` (yes/no actions like mark complete), `_TextInputSheet` (add note), `_FormSheet` (configurable fields like schedule inspection), `_PhoneSheet` (pick a participant to call), `_PlaceholderSheet` (coming soon fallback). |
+| `action_registry.dart` | **Single source of truth** for all system actions. | All registered actions, each with: `key`, `label`, `description`, `icon`, `color`, `displayMode` (fullScreen/bottomSheet/webView), `screenType` (custom/form/confirmation/textInput/phone/web), `priority` (for AI ordering), `requiresData` (e.g. only show if task has quotes), `applicableTo` (filter by task type), `formFields` (for generic form screens), `confirmMessage`. Has `get()`, `isRegistered()`, `getByPriority()`, `taskMeetsRequirements()` methods. `fallback()` generates config for unknown actions so the app never crashes. **All backend `actionSpace` keys must have a matching entry here.** |
+| `action_router.dart` | Routes action tile taps to the correct destination. | Handles three flows: `open()` for system actions (reads registry, opens full screen/bottom sheet/web view), `openProjectAction()` for project-level actions — handles both backend keys (`view_tasks`, `manage_team`, etc.) and legacy `project_*` keys, `openCustomAction()` for user-created actions (web/phone/note). Includes generic bottom sheets: `_ConfirmationSheet`, `_TextInputSheet`, `_FormSheet`, `_PhoneSheet`, `_PlaceholderSheet`. |
 
 ##### Action Screens (`lib/features/actions/screens/`)
 
@@ -336,56 +434,115 @@ Emergency Boiler Repair (task, parentTaskId: null — standalone)
 
 ```
 User selects a card on home screen
-  → actionSpace loaded (e.g. ["project_detail", "project_quote", ...])
-  → Each action key resolved via ActionRegistry or project action config
+  → actionSpace loaded from task document (written by backend at generation time)
+  → Each action key resolved via ActionRegistry
   → Tiles rendered with icon, colour, label
   → User taps a tile
   → ActionRouter decides: full screen / bottom sheet / web view
   → Correct screen or sheet opens
 ```
 
+### Frontend / Backend Contract
+
+The `actionSpace` field on every task is written by the backend at generation time, defined in `app/services/templates/library/renovation.yaml` in the backend repo. The frontend `ActionRegistry` must have a matching entry for every key the backend can produce. This is the contract between the two repos.
+
+**Current backend keys and their frontend mappings:**
+
+| Backend key | Label | Routes to |
+|-------------|-------|-----------|
+| `request_quote` | Request Quote | Request quote screen |
+| `view_details` | View Details | Task detail screen |
+| `schedule_work` | Schedule | Schedule form sheet |
+| `upload_photo` | Upload Photo | Photo upload sheet |
+| `add_note` | Add Note | Text input sheet |
+| `view_tasks` | View Tasks | Project task list (detail mode) |
+| `review_quotes` | Review Quotes | Project task list (quote mode) |
+| `view_progress` | Progress | Task progress screen |
+| `manage_team` | Manage Team | Placeholder (team screen TBD) |
+| `create_invoice` | Invoice | Project task list (invoice mode) |
+
+If the backend adds a new key with no registry entry, the tile renders using `ActionRegistry.fallback()` — showing a generic icon and "Coming soon" sheet. The app never crashes on unknown keys.
+
 ### Action Types
 
-| Type | Display Mode | Examples | Needs Compilation? |
+| Type | Display Mode | Examples | Needs new screen? |
 |------|-------------|----------|-------------------|
 | System (registered) | Full screen | Review Quotes, Assign Contractor | Yes — custom Flutter UI |
-| System (registered) | Bottom sheet | Add Note, Mark Complete, Schedule | Yes — but uses generic reusable sheets |
+| System (registered) | Bottom sheet | Add Note, Mark Complete, Schedule | No — uses generic reusable sheets |
 | System (registered) | Web view | Shop Materials, Select Colour | No — just a URL |
-| Project-specific | Full screen | Detail, Quote, Schedule, Photo, Invoice | Yes — built once, reusable |
-| Custom (user-created) | Web/phone/note | User's bookmarks, links, contacts | No — never needs compilation |
+| Project-specific | Full screen | View Tasks, View Progress, Create Invoice | No — reuses existing screens |
+| Custom (user-created) | Web/phone/note | User's bookmarks, links, contacts | Never |
 
 ### Adding a New Action
 
-**System action with custom UI:**
-1. Add entry to `action_registry.dart`
-2. Build the screen/sheet in `lib/features/actions/screens/`
-3. Add route in `action_router.dart`
-4. Requires app update
+This is the full workflow for adding an action end-to-end. The only decision upfront is which `screenType` fits — that determines how much work is involved.
 
-**System action with generic UI (form, confirmation):**
-1. Add entry to `action_registry.dart` with `screenType: form/confirmation`
-2. Configure `formFields` or `confirmMessage`
-3. No new screen needed — reuses generic sheets
-4. Requires app update (but minimal code change)
+**Step 1 — Backend** (only needed if the action should appear on AI-generated tasks):
 
-**Web action:**
-1. Build the web page on your server
-2. Add entry to `action_registry.dart` with `displayMode: webView` and `url`
-3. No custom screen needed
-4. Web page can be updated without app release
+Add the key to `initial_action_space` or `project_action_space` in `app/services/templates/library/renovation.yaml` in the backend repo:
 
-**Custom user action:**
-1. User taps "+" on action area
-2. Enters label, picks icon, enters URL/phone
-3. No code changes, no app update, no registration
+```yaml
+initial_action_space:
+  - request_quote
+  - view_details
+  - pay_deposit    # ← new key
+  - schedule_work
+  - upload_photo
+  - add_note
+```
+
+**Step 2 — Frontend: add to `action_registry.dart`**
+
+Add one entry to the `_actions` map. The `screenType` drives the UI automatically — for most action types, this is the only frontend step needed:
+
+```dart
+'pay_deposit': const ActionConfig(
+  key: 'pay_deposit',
+  label: 'Pay Deposit',
+  description: 'Send a 25% deposit to the assigned contractor',
+  icon: Icons.payment,
+  color: Color(0xFF00B894),
+  displayMode: ActionDisplayMode.bottomSheet,
+  screenType: ActionScreenType.confirmation,
+  confirmMessage: 'Send a 25% deposit to the assigned contractor?',
+  confirmLabel: 'Pay Now',
+  priority: 85,
+),
+```
+
+Pick the `displayMode` and `screenType` combination that fits:
+
+| displayMode | screenType | What you get | Extra config needed |
+|-------------|-----------|-------------|---------------------|
+| `bottomSheet` | `confirmation` | Confirm/cancel sheet | `confirmMessage`, `confirmLabel` |
+| `bottomSheet` | `textInput` | Note entry sheet | — |
+| `bottomSheet` | `form` | Configurable field form | `formFields` list |
+| `bottomSheet` | `phone` | Pick a participant to call | `requiresData: ['participants']` |
+| `webView` | `web` | In-app browser | `url` |
+| `fullScreen` | `custom` | Blank — build your own screen | Step 3 below |
+
+**Step 3 — only if `screenType` is `custom`:**
+
+Add a case to `_openFullScreen` in `action_router.dart`:
+
+```dart
+case 'pay_deposit':
+  context.push('/actions/pay-deposit/${task.taskId}');
+  break;
+```
+
+Then register the route in `app_router.dart` and create the screen file in `lib/features/actions/screens/`.
+
+That's the full workflow. For anything other than `custom`, only Steps 1 and 2 are needed — no new screen, no new route.
 
 ---
 
 ## Switching to Real Backend
 
 1. Set `useMockData` to `false` in `lib/core/config/app_config.dart`
-2. Implement the methods in `lib/data/remote/api_task_repository.dart`
-3. The UI stays exactly the same — no other changes needed
+2. Set `apiBaseUrl` to your deployed backend URL (e.g. Cloud Run URL)
+3. Implement the methods in `lib/data/remote/api_task_repository.dart` using the endpoints above
+4. The UI stays exactly the same — no other changes needed
 
 ---
 
@@ -401,9 +558,10 @@ User selects a card on home screen
 - Auto-snap-back to selected card
 
 ### Phase 3 — Action System ✅
-- Action Registry with 20 registered system actions
+- Action Registry with all registered system actions
 - Action Router with full screen / bottom sheet / web view routing
-- Project actions: Detail, Quote, Schedule, Photo, Invoice
+- Full backend `actionSpace` key coverage — all backend keys mapped in registry and router
+- Project actions: View Tasks, Review Quotes, View Progress, Manage Team, Create Invoice
 - Reusable project task list screen with 4 modes
 - Task quote screen with comparison and accept/reject
 - Task schedule screen with progress tracking
@@ -421,8 +579,9 @@ User selects a card on home screen
 - Action reordering
 
 ### Phase 6 — Connect Real Backend
-- Implement API repositories, authentication, push notifications
-- Move action registry to backend config API
+- Implement `api_task_repository.dart` against `imaginetask-engine` endpoints
+- Authentication (Firebase Auth — already initialised in the project)
+- Push notifications
 - Real WebView integration (`webview_flutter`)
 
 ### Phase 7 — AI Integration

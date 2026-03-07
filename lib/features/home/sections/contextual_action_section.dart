@@ -325,73 +325,40 @@ class _ContextualActionSectionState extends State<ContextualActionSection> {
     }
   }
 
-  /// Get config from registry, or generate fallback
+  /// Get config from registry, or generate fallback.
+  /// All system keys (including backend action_space keys) are registered
+  /// in ActionRegistry, so this only falls back for truly unknown keys.
   ActionConfig _getActionConfig(String actionKey, int index) {
     final registered = ActionRegistry.get(actionKey);
     if (registered != null) return registered;
-
-    switch (actionKey) {
-      case 'project_detail':
-        return const ActionConfig(
-          key: 'project_detail',
-          label: 'Detail',
-          description: 'View all tasks in this project',
-          icon: Icons.list_alt,
-          color: Color(0xFF6366F1),
-          displayMode: ActionDisplayMode.fullScreen,
-          priority: 90,
-        );
-      case 'project_quote':
-        return const ActionConfig(
-          key: 'project_quote',
-          label: 'Quote',
-          description: 'Manage quotes for project tasks',
-          icon: Icons.request_quote,
-          color: Color(0xFFFF6B6B),
-          displayMode: ActionDisplayMode.fullScreen,
-          priority: 85,
-        );
-      case 'project_schedule':
-        return const ActionConfig(
-          key: 'project_schedule',
-          label: 'Schedule',
-          description: 'Manage timelines for project tasks',
-          icon: Icons.calendar_month,
-          color: Color(0xFF45B7D1),
-          displayMode: ActionDisplayMode.fullScreen,
-          priority: 80,
-        );
-      case 'project_photo':
-        return const ActionConfig(
-          key: 'project_photo',
-          label: 'Photo',
-          description: 'Upload and view project photos',
-          icon: Icons.camera_alt,
-          color: Color(0xFFFECA57),
-          displayMode: ActionDisplayMode.fullScreen,
-          priority: 75,
-        );
-      case 'project_invoice':
-        return const ActionConfig(
-          key: 'project_invoice',
-          label: 'Invoice',
-          description: 'Issue and review invoices for project tasks',
-          icon: Icons.receipt_long,
-          color: Color(0xFF6C5CE7),
-          displayMode: ActionDisplayMode.fullScreen,
-          priority: 70,
-        );
-      default:
-        return ActionRegistry.fallback(actionKey, index: index);
-    }
+    return ActionRegistry.fallback(actionKey, index: index);
   }
 
-  /// Route tap to the correct screen
+  /// Route tap to the correct screen.
+  /// For project tasks, certain action keys are handled project-wide
+  /// (navigating across all tasks). Both legacy 'project_*' keys and the
+  /// backend's direct keys (view_tasks, review_quotes, etc.) are supported.
   void _handleActionTap(BuildContext context, String actionKey, Task task) {
-    if (actionKey.startsWith('project_')) {
+    const projectLevelKeys = {
+      // legacy frontend keys
+      'project_detail', 'project_quote', 'project_schedule',
+      'project_photo', 'project_invoice',
+      // backend project_action_space keys
+      'view_tasks', 'view_progress', 'manage_team', 'create_invoice',
+      // review_quotes and upload_photo are shared but on a project we open
+      // the project-scoped version
+    };
+
+    final isProject = task.isProject;
+
+    if (isProject && (projectLevelKeys.contains(actionKey) ||
+        actionKey == 'review_quotes' ||
+        actionKey == 'upload_photo' ||
+        actionKey == 'schedule_work')) {
       ActionRouter.openProjectAction(context, actionKey, task);
       return;
     }
+
     ActionRouter.open(context, actionKey, task);
   }
 }

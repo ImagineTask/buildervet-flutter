@@ -163,7 +163,6 @@ class _ProjectTab extends ConsumerWidget {
 
     return projectsAsync.when(
       data: (projects) {
-        // Find the selected task object
         Task? selectedTask;
         if (selectedId != null) {
           try {
@@ -203,18 +202,15 @@ class _TaskTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasksAsync = ref.watch(allTasksProvider);
+    final tasksAsync = ref.watch(standaloneTasksProvider);
     final selectedId = ref.watch(selectedTaskIdProvider);
 
     return tasksAsync.when(
       data: (tasks) {
-        final normalTasks = tasks.where((t) => !t.isProject).toList();
-
-        // Find the selected task object
         Task? selectedTask;
         if (selectedId != null) {
           try {
-            selectedTask = normalTasks.firstWhere((t) => t.taskId == selectedId);
+            selectedTask = tasks.firstWhere((t) => t.taskId == selectedId);
           } catch (_) {
             selectedTask = null;
           }
@@ -223,7 +219,7 @@ class _TaskTab extends ConsumerWidget {
         return Column(
           children: [
             CardCarouselSection(
-              items: normalTasks,
+              items: tasks,
               selectedId: selectedId,
               onSelect: (id) {
                 ref.read(selectedTaskIdProvider.notifier).state = id;

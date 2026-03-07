@@ -361,6 +361,87 @@ class ActionRegistry {
       priority: 50,
     ),
 
+    // ─── BACKEND ACTION SPACE KEYS ────────────────────────────
+    // These are the exact keys sent by the backend in actionSpace.
+    // Task initial_action_space: request_quote, view_details, schedule_work,
+    //   upload_photo, add_note
+    // Project project_action_space: view_tasks, review_quotes, schedule_work,
+    //   upload_photo, view_progress, manage_team, create_invoice
+
+    'view_details': const ActionConfig(
+      key: 'view_details',
+      label: 'View Details',
+      description: 'Open the full task detail screen',
+      icon: Icons.info_outline,
+      color: Color(0xFF6366F1),
+      displayMode: ActionDisplayMode.fullScreen,
+      screenType: ActionScreenType.custom,
+      priority: 95,
+    ),
+
+    'schedule_work': const ActionConfig(
+      key: 'schedule_work',
+      label: 'Schedule',
+      description: 'Set start and end dates for this task',
+      icon: Icons.calendar_month,
+      color: Color(0xFF45B7D1),
+      displayMode: ActionDisplayMode.bottomSheet,
+      screenType: ActionScreenType.form,
+      formFields: [
+        {'name': 'start_date', 'type': 'date', 'label': 'Start Date', 'required': true},
+        {'name': 'end_date', 'type': 'date', 'label': 'End Date', 'required': true},
+      ],
+      priority: 70,
+    ),
+
+    'view_tasks': const ActionConfig(
+      key: 'view_tasks',
+      label: 'View Tasks',
+      description: 'See all tasks in this project',
+      icon: Icons.list_alt,
+      color: Color(0xFF6366F1),
+      displayMode: ActionDisplayMode.fullScreen,
+      screenType: ActionScreenType.custom,
+      applicableTo: ['project'],
+      priority: 95,
+    ),
+
+    'view_progress': const ActionConfig(
+      key: 'view_progress',
+      label: 'Progress',
+      description: 'View the overall project progress',
+      icon: Icons.bar_chart,
+      color: Color(0xFF00B894),
+      displayMode: ActionDisplayMode.fullScreen,
+      screenType: ActionScreenType.custom,
+      applicableTo: ['project'],
+      priority: 80,
+    ),
+
+    'manage_team': const ActionConfig(
+      key: 'manage_team',
+      label: 'Manage Team',
+      description: 'Add, remove, or reassign people on this project',
+      icon: Icons.group,
+      color: Color(0xFF0984E3),
+      displayMode: ActionDisplayMode.fullScreen,
+      screenType: ActionScreenType.custom,
+      applicableTo: ['project'],
+      priority: 75,
+    ),
+
+    'create_invoice': const ActionConfig(
+      key: 'create_invoice',
+      label: 'Invoice',
+      description: 'Create or review an invoice for this project',
+      icon: Icons.receipt_long,
+      color: Color(0xFF6C5CE7),
+      displayMode: ActionDisplayMode.fullScreen,
+      screenType: ActionScreenType.custom,
+      applicableTo: ['project'],
+      priority: 70,
+    ),
+
     // ─── DESIGN ACTIONS (full screen) ─────────────────────────
 
     'finalise_design': const ActionConfig(
