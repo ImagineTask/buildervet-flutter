@@ -1,0 +1,882 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BuilderVet — Data Contract
+# Version: 1.0
+#
+# SINGLE SOURCE OF TRUTH for the boundary between:
+#   Backend  →  imaginetask-engine  (FastAPI / Python)
+#   Frontend →  buildervet          (Flutter / Dart)
+#
+# Rules:
+#   1. Never change action_registry.dart or renovation.yaml directly.
+#      Always update this file first, then cascade to implementations.
+#   2. All field names use camelCase (matches Firestore + Flutter fromJson).
+#   3. Wire format is JSON over HTTP. Dates are ISO 8601 strings.
+#   4. LLM prompt: paste this file as context before any cross-cutting task.
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "1.0"
+last_updated: "2025-03-07"
+currency: GBP
+timezone: UTC
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ENUMS
+# Shared value sets — both sides must use exactly these string values.
+# ══════════════════════════════════════════════════════════════════════════════
+
+enums:
+
+  task_type:
+    description: "Whether a Task document is a top-level project or a subtask."
+    values:
+      - value: project
+        description: "Parent task. Has no parentTaskId. Has project_action_space."
+      - value: task
+        description: "Subtask. Has a parentTaskId. Has initial_action_space."
+
+  task_status:
+    description: "Lifecycle state of a task. Backend sets initial value to 'draft'."
+    wire_format: snake_case   # e.g. "in_progress" over the wire
+    values:
+      - value: draft
+        label: Draft
+        color: "#9E9E9E"
+        icon: edit_outlined
+      - value: pending
+        label: Pending
+        color: "#FECA57"
+        icon: schedule
+      - value: in_progress
+        label: In Progress
+        color: "#45B7D1"
+        icon: play_circle_outline
+      - value: completed
+        label: Completed
+        color: "#00B894"
+        icon: check_circle_outline
+      - value: cancelled
+        label: Cancelled
+        color: "#D63031"
+        icon: cancel_outlined
+
+  quote_status:
+    wire_format: snake_case
+    values:
+      - value: pending
+        label: Pending
+        color: "#FECA57"
+      - value: accepted
+        label: Accepted
+        color: "#00B894"
+      - value: rejected
+        label: Rejected
+        color: "#D63031"
+
+  participant_role:
+    description: "Role of a person attached to a task."
+    wire_format: snake_case   # e.g. "gas_engineer"
+    values:
+      - value: homeowner
+        label: Homeowner
+        icon: home
+      - value: contractor
+        label: Contractor
+        icon: construction
+      - value: designer
+        label: Designer
+        icon: palette
+      - value: electrician
+        label: Electrician
+        icon: electrical_services
+      - value: plumber
+        label: Plumber
+        icon: plumbing
+      - value: gas_engineer
+        label: Gas Engineer
+        icon: local_fire_department
+      - value: labourer
+        label: Labourer
+        icon: engineering
+      - value: inspector
+        label: Inspector
+        icon: verified
+      - value: landscape_designer
+        label: Landscape Designer
+        icon: park
+      - value: other
+        label: Other
+        icon: person
+
+  event_type:
+    description: >
+      All valid values for EventDocument.type.
+      Frontend TaskEvent.label/icon/color switch on these strings.
+    values:
+      - task_created
+      - quote_submitted
+      - quote_accepted
+      - quote_rejected
+      - person_assigned
+      - person_removed
+      - work_scheduled
+      - work_started
+      - work_paused
+      - work_resumed
+      - photo_uploaded
+      - inspection_requested
+      - inspection_passed
+      - inspection_failed
+      - invoice_created
+      - invoice_sent
+      - payment_received
+      - task_completed
+      - status_changed
+      - note_added
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MODELS
+# All fields are camelCase. Types map to both Python (Pydantic) and Dart.
+# ══════════════════════════════════════════════════════════════════════════════
+
+models:
+
+  # ── Task ──────────────────────────────────────────────────────────────────
+  Task:
+    description: >
+      The core entity. Everything is a Task.
+      A project is a task with taskType="project".
+      All tasks live in the flat Firestore tasks/ collection.
+    firestore_collection: tasks
+    fields:
+      taskId:
+        type: string
+        required: true
+        description: "Unique ID. Backend generates: 'proj-{8hex}' for projects, 'task-{8hex}' for tasks."
+
+      taskName:
+        type: string
+        required: true
+
+      taskType:
+        type: enum(task_type)
+        required: true
+
+      parentTaskId:
+        type: string
+        required: false
+        nullable: true
+        description: "null for projects and standalone tasks. Points to project taskId for subtasks."
+
+      description:
+        type: string
+        required: true
+
+      status:
+        type: enum(task_status)
+        required: true
+        default: draft
+
+      startTime:
+        type: datetime
+        required: true
+        format: ISO 8601
+        example: "2025-03-14T09:00:00Z"
+
+      endTime:
+        type: datetime
+        required: true
+        format: ISO 8601
+
+      durationDays:
+        type: int
+        required: true
+        description: "Working days. Derived from endTime - startTime."
+
+      actionSpace:
+        type: list<string>
+        required: true
+        default: []
+        description: >
+          List of action keys available for this task.
+          Backend sets from template (initial_action_space or project_action_space).
+          Frontend resolves each key via ActionRegistry.
+          See actions section below for all valid keys.
+
+      guidePrice:
+        type: float
+        required: false
+        nullable: true
+        description: "Midpoint of guidePriceMin and guidePriceMax. In GBP."
+
+      guidePriceMin:
+        type: float
+        required: false
+        nullable: true
+        description: "AI lower-bound estimate. In GBP."
+
+      guidePriceMax:
+        type: float
+        required: false
+        nullable: true
+        description: "AI upper-bound estimate. In GBP."
+
+      contractorType:
+        type: string
+        required: false
+        nullable: true
+        description: "e.g. 'plumber', 'electrician'. Free text from AI."
+
+      ownerId:
+        type: string
+        required: true
+        description: "userId of the person who created / owns this task."
+
+      participantIds:
+        type: list<string>
+        required: true
+        default: []
+        description: "userIds of everyone involved. ownerId is always included."
+
+      quotes:
+        type: list<Quote>
+        required: false
+        default: []
+        description: "Contractor quotes. Populated after request_quote action."
+
+      participants:
+        type: list<Participant>
+        required: false
+        default: []
+        description: "Full Participant objects (not just IDs). Populated by frontend from user lookup."
+
+      events:
+        type: list<Event>
+        required: false
+        default: []
+        description: >
+          Loaded from tasks/{taskId}/events subcollection.
+          NOT stored on the Task document itself.
+
+      metadata:
+        type: map<string, any>
+        required: false
+        default: {}
+        description: >
+          Flexible bag for future fields. Current known keys:
+            taskOrder (int)     — position within project, set by backend
+            dependsOn (string?) — taskId this task must follow
+            context (string)    — original user prompt, on project only
+            template (string)   — template name used, on project only
+            provider (string)   — AI provider used, on project only
+            taskCount (int)     — number of subtasks, on project only
+            photos (list)       — photo URLs, populated by upload_photo action
+            invoice (map)       — invoice state, populated by create_invoice action
+              invoice.status: draft | issued | paid
+
+      createdAt:
+        type: datetime
+        required: true
+        format: ISO 8601
+
+      updatedAt:
+        type: datetime
+        required: true
+        format: ISO 8601
+
+  # ── Quote ─────────────────────────────────────────────────────────────────
+  Quote:
+    description: "A contractor's price submission for a task."
+    storage: "Embedded in Task.quotes list"
+    fields:
+      contractorId:   { type: string,             required: true }
+      contractorName: { type: string,             required: true }
+      amount:         { type: float,              required: true,  description: "Total quote in GBP." }
+      description:    { type: string,             required: true }
+      submittedAt:    { type: datetime,           required: true,  format: ISO 8601 }
+      status:         { type: enum(quote_status), required: true,  default: pending }
+
+  # ── Participant ───────────────────────────────────────────────────────────
+  Participant:
+    description: "A person attached to a task with a specific role."
+    storage: "Embedded in Task.participants list"
+    fields:
+      userId:    { type: string,                  required: true }
+      name:      { type: string,                  required: true }
+      role:      { type: enum(participant_role),  required: true }
+      email:     { type: string,                  required: true }
+      avatarUrl: { type: string,                  required: false, nullable: true }
+      phone:     { type: string,                  required: false, nullable: true }
+
+  # ── Event ─────────────────────────────────────────────────────────────────
+  Event:
+    description: "An immutable audit log entry for a task."
+    firestore_path: "tasks/{taskId}/events/{eventId}"
+    fields:
+      id:        { type: string,              required: true,  description: "Backend generates: 'evt-{8hex}'." }
+      type:      { type: enum(event_type),    required: true }
+      timestamp: { type: datetime,            required: true,  format: ISO 8601 }
+      actorId:   { type: string,              required: true }
+      actorName: { type: string,              required: true }
+      actorRole: { type: string,              required: true,  description: "Free text role label." }
+      data:      { type: map<string, any>,    required: false, default: {},
+                   description: "Event-specific payload. See event_type enum for expected keys per type." }
+
+    data_payloads:
+      description: "Known data keys per event type."
+      quote_submitted:    { amount: float, contractorName: string }
+      quote_accepted:     { amount: float, contractorName: string }
+      quote_rejected:     { contractorName: string }
+      person_assigned:    { personName: string, personRole: string }
+      person_removed:     { personName: string }
+      work_scheduled:     { startDate: string, endDate: string }
+      photo_uploaded:     { count: int }
+      inspection_failed:  { reason: string }
+      invoice_created:    { amount: float }
+      status_changed:     { from: string, to: string }
+      note_added:         { note: string }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ACTION SPACE
+# Defines every valid string that can appear in Task.actionSpace.
+# Backend: sets in renovation.yaml (initial_action_space / project_action_space).
+# Frontend: resolves each key via ActionRegistry to icon, colour, routing.
+# ══════════════════════════════════════════════════════════════════════════════
+
+actions:
+
+  display_modes:
+    - fullScreen:   "Pushes a full Flutter screen."
+    - bottomSheet:  "Slides up a modal bottom sheet."
+    - webView:      "Opens URL in in-app browser."
+
+  screen_types:
+    - custom:       "Dedicated Flutter screen. Must be built and routed manually."
+    - form:         "Generic form sheet. Configure via form_fields."
+    - confirmation: "Yes/No sheet. Configure via confirm_message and confirm_label."
+    - textInput:    "Free-text note entry sheet. No configuration needed."
+    - phone:        "Shows participant list with call buttons."
+    - web:          "WebView. Provide url."
+
+  # ── Task-level actions ────────────────────────────────────────────────────
+  # These appear in: renovation.yaml → initial_action_space
+  # Sent on: tasks with taskType="task"
+
+  task_actions:
+
+    - key: view_details
+      label: View Details
+      description: Open the full task detail screen
+      icon: info_outline
+      color: "#6366F1"
+      display: fullScreen
+      screen: custom
+      route: /tasks/{taskId}
+      priority: 95
+
+    - key: request_quote
+      label: Request Quote
+      description: Send a quote request to one or more contractors
+      icon: receipt_long
+      color: "#E17055"
+      display: fullScreen
+      screen: custom
+      route: /actions/task-quote/{taskId}       # reuses quote screen
+      priority: 80
+
+    - key: schedule_work
+      label: Schedule
+      description: Set start and end dates for this task
+      icon: calendar_month
+      color: "#45B7D1"
+      display: bottomSheet
+      screen: form
+      priority: 70
+      form_fields:
+        - { name: start_date, type: date, label: Start Date, required: true }
+        - { name: end_date,   type: date, label: End Date,   required: true }
+
+    - key: upload_photo
+      label: Upload Photo
+      description: Take a photo or upload from gallery
+      icon: camera_alt
+      color: "#FECA57"
+      display: bottomSheet
+      screen: custom
+      priority: 65
+
+    - key: add_note
+      label: Add Note
+      description: Add a text note to this task
+      icon: note_add
+      color: "#9B59B6"
+      display: bottomSheet
+      screen: textInput
+      priority: 60
+
+  # ── Project-level actions ─────────────────────────────────────────────────
+  # These appear in: renovation.yaml → project_action_space
+  # Sent on: tasks with taskType="project"
+
+  project_actions:
+
+    - key: view_tasks
+      label: View Tasks
+      description: See all tasks in this project
+      icon: list_alt
+      color: "#6366F1"
+      display: fullScreen
+      screen: custom
+      route: /actions/project-tasks/{taskId}/detail
+      priority: 95
+      applies_to: [project]
+
+    - key: review_quotes
+      label: Review Quotes
+      description: Compare and accept or reject contractor quotes
+      icon: request_quote
+      color: "#FF6B6B"
+      display: fullScreen
+      screen: custom
+      route: /actions/project-tasks/{taskId}/quote
+      priority: 90
+      requires_data: [quotes]
+      applies_to: [project]
+
+    - key: schedule_work
+      label: Schedule
+      description: Manage timelines for all project tasks
+      icon: calendar_month
+      color: "#45B7D1"
+      display: fullScreen
+      screen: custom
+      route: /actions/project-tasks/{taskId}/schedule
+      priority: 80
+      applies_to: [project]
+      note: "Same key as task-level schedule_work. Router detects task.isProject to pick the correct route."
+
+    - key: upload_photo
+      label: Upload Photo
+      description: Upload and view project photos
+      icon: camera_alt
+      color: "#FECA57"
+      display: fullScreen
+      screen: custom
+      route: /actions/project-photo/{taskId}
+      priority: 75
+      applies_to: [project]
+      note: "Same key as task-level upload_photo. Router detects task.isProject."
+
+    - key: view_progress
+      label: Progress
+      description: View the overall project progress
+      icon: bar_chart
+      color: "#00B894"
+      display: fullScreen
+      screen: custom
+      route: /actions/task-progress/{taskId}
+      priority: 80
+      applies_to: [project]
+
+    - key: manage_team
+      label: Manage Team
+      description: Add, remove, or reassign people on this project
+      icon: group
+      color: "#0984E3"
+      display: fullScreen
+      screen: custom
+      route: TODO
+      priority: 75
+      applies_to: [project]
+
+    - key: create_invoice
+      label: Invoice
+      description: Create or review an invoice for this project
+      icon: receipt_long
+      color: "#6C5CE7"
+      display: fullScreen
+      screen: custom
+      route: /actions/project-tasks/{taskId}/invoice
+      priority: 70
+      applies_to: [project]
+
+  # ── Additional registered actions (not in default action_space) ───────────
+  # These are in ActionRegistry but not assigned by default.
+  # Backend can add them to action_space for specific task states.
+
+  additional_actions:
+
+    - key: mark_complete
+      label: Mark Complete
+      description: Mark this task as completed
+      icon: check_circle
+      color: "#00B894"
+      display: bottomSheet
+      screen: confirmation
+      confirm_message: "Mark this task as completed? This will notify all participants."
+      confirm_label: Complete
+      priority: 85
+
+    - key: start_task
+      label: Start Task
+      description: Mark this task as started and in progress
+      icon: play_circle
+      color: "#2ECC71"
+      display: bottomSheet
+      screen: confirmation
+      confirm_message: "Start working on this task? The status will change to In Progress."
+      confirm_label: Start
+      priority: 90
+
+    - key: approve_quote
+      label: Approve Quote
+      description: Accept a specific contractor quote
+      icon: thumb_up
+      color: "#55A3F5"
+      display: bottomSheet
+      screen: confirmation
+      confirm_message: "Approve this quote? The contractor will be notified."
+      confirm_label: Approve
+      requires_data: [quotes]
+      priority: 85
+
+    - key: assign_contractor
+      label: Assign Contractor
+      description: Browse and assign a contractor to this task
+      icon: person_add
+      color: "#0984E3"
+      display: fullScreen
+      screen: custom
+      route: TODO
+      priority: 75
+
+    - key: call_engineer
+      label: Call Engineer
+      description: Call the assigned engineer or contractor
+      icon: phone
+      color: "#00CEC9"
+      display: bottomSheet
+      screen: phone
+      requires_data: [participants]
+      priority: 60
+
+    - key: schedule_inspection
+      label: Schedule Inspection
+      description: Book an inspection date and time
+      icon: event
+      color: "#45B7D1"
+      display: bottomSheet
+      screen: form
+      priority: 70
+      form_fields:
+        - { name: date,             type: date, label: Inspection Date, required: true }
+        - { name: time,             type: time, label: Time,            required: true }
+        - { name: inspector_notes,  type: text, label: Notes for Inspector, required: false }
+
+    - key: request_inspection
+      label: Request Inspection
+      description: Request a professional inspection visit
+      icon: verified
+      color: "#96CEB4"
+      display: bottomSheet
+      screen: form
+      priority: 65
+      form_fields:
+        - { name: inspection_type,  type: text, label: Inspection Type,  required: true }
+        - { name: preferred_date,   type: date, label: Preferred Date,   required: true }
+        - { name: notes,            type: text, label: Additional Notes, required: false }
+
+    - key: report_issue
+      label: Report Issue
+      description: Flag a problem with description and photos
+      icon: warning
+      color: "#D63031"
+      display: fullScreen
+      screen: custom
+      route: TODO
+      priority: 90
+
+    - key: approve_material
+      label: Approve Material
+      description: Review and confirm material selections
+      icon: check_box
+      color: "#4ECDC4"
+      display: fullScreen
+      screen: custom
+      route: TODO
+      priority: 75
+
+    - key: confirm_materials
+      label: Confirm Materials
+      description: Final confirmation that materials are ordered
+      icon: inventory
+      color: "#6C5CE7"
+      display: bottomSheet
+      screen: confirmation
+      confirm_message: "Confirm that all materials have been ordered?"
+      confirm_label: Confirm
+      priority: 70
+
+    - key: confirm_fixtures
+      label: Confirm Fixtures
+      description: Confirm bathroom or kitchen fixture selections
+      icon: plumbing
+      color: "#7ED6DF"
+      display: bottomSheet
+      screen: confirmation
+      confirm_message: "Confirm the fixture selections? This will lock in the order."
+      confirm_label: Confirm
+      priority: 70
+
+    - key: select_material
+      label: Select Material
+      description: Browse and choose materials from suppliers
+      icon: palette
+      color: "#E84393"
+      display: webView
+      screen: web
+      url: "https://www.screwfix.com"
+      priority: 55
+
+    - key: select_colour
+      label: Select Colour
+      description: Pick paint or tile colours
+      icon: color_lens
+      color: "#A29BFE"
+      display: webView
+      screen: web
+      url: "https://www.dulux.co.uk/en/colour-palettes"
+      priority: 50
+
+    - key: finalise_design
+      label: Finalise Design
+      description: Review and lock in the design plan
+      icon: design_services
+      color: "#FF9FF3"
+      display: fullScreen
+      screen: custom
+      route: TODO
+      priority: 80
+
+    - key: get_planning_advice
+      label: Planning Advice
+      description: Get guidance on planning permission requirements
+      icon: lightbulb
+      color: "#F9CA24"
+      display: webView
+      screen: web
+      url: "https://www.planningportal.co.uk"
+      priority: 40
+
+    - key: request_quotes
+      label: Request Quotes
+      description: Send quote requests to multiple contractors at once
+      icon: request_page
+      color: "#FF6348"
+      display: fullScreen
+      screen: custom
+      route: TODO
+      priority: 80
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# API ENDPOINTS
+# Base URL configured in Flutter: AppConfig.apiBaseUrl
+# All responses return camelCase JSON.
+# All errors return: { "detail": "string" }
+# ══════════════════════════════════════════════════════════════════════════════
+
+endpoints:
+
+  - id: generate_tasks
+    method: POST
+    path: /tasks/generate
+    description: "Generate an AI-powered project with subtasks from a user description."
+    request:
+      content_type: application/json
+      body:
+        userId:       { type: string,  required: true,  alias_in_body: userId }
+        userName:     { type: string,  required: false, default: "User" }
+        userRole:     { type: string,  required: false, default: homeowner }
+        context:      { type: string,  required: true,  description: "Natural language description of what they need." }
+        template:     { type: string,  required: false, default: renovation }
+        provider:     { type: string,  required: false, description: "Override AI provider: openai | anthropic | google" }
+        model:        { type: string,  required: false, description: "Override model name." }
+    response:
+      status:               { type: string }
+      message:              { type: string }
+      projectId:            { type: string }
+      projectName:          { type: string }
+      projectDescription:   { type: string }
+      tasksCount:           { type: int }
+      taskIds:              { type: list<string> }
+      providerUsed:         { type: string }
+    errors:
+      500: "AI generation failed or DB write error."
+
+  - id: get_project
+    method: GET
+    path: /tasks/project/{projectId}
+    description: "Get a project document and all its child tasks."
+    response:
+      project:          { type: Task,        description: "Project document with events embedded." }
+      tasks:            { type: list<Task>,   description: "Child tasks sorted by metadata.taskOrder." }
+      total_documents:  { type: int }
+    errors:
+      404: "Project not found."
+
+  - id: get_task
+    method: GET
+    path: /tasks/task/{taskId}
+    description: "Get a single task with its events embedded."
+    response:
+      type: Task
+      note: "Events array is embedded from tasks/{taskId}/events subcollection."
+    errors:
+      404: "Task not found."
+
+  - id: get_user_tasks
+    method: GET
+    path: /tasks/user/{userId}
+    description: "Get all projects and standalone tasks owned by a user."
+    response:
+      userId:          { type: string }
+      projects:        { type: list<Task>,  description: "Tasks where taskType=project." }
+      tasks:           { type: list<Task>,  description: "Tasks where taskType=task (standalone only — no parentTaskId)." }
+      total_projects:  { type: int }
+      total_tasks:     { type: int }
+
+  - id: health
+    method: GET
+    path: /health
+    description: "Liveness check."
+    response:
+      status:        { type: string, example: healthy }
+      ai_providers:  { type: list<string> }
+      templates:     { type: list<string> }
+      prompts:       { type: list<string> }
+
+  # ── Planned endpoints (not yet implemented) ───────────────────────────────
+
+  - id: update_task
+    method: PATCH
+    path: /tasks/task/{taskId}
+    status: planned
+    description: "Partial update of a task (status, dates, metadata, etc.)."
+    request:
+      body: "Partial<Task> — any subset of Task fields."
+    response:
+      type: Task
+
+  - id: add_event
+    method: POST
+    path: /tasks/task/{taskId}/events
+    status: planned
+    description: "Append an event to a task's history."
+    request:
+      body:
+        type:       { type: enum(event_type), required: true }
+        actorId:    { type: string,           required: true }
+        actorName:  { type: string,           required: true }
+        actorRole:  { type: string,           required: true }
+        data:       { type: map,              required: false, default: {} }
+    response:
+      type: Event
+
+  - id: submit_quote
+    method: POST
+    path: /tasks/task/{taskId}/quotes
+    status: planned
+    description: "Submit a contractor quote for a task."
+    request:
+      body:
+        contractorId:    { type: string, required: true }
+        contractorName:  { type: string, required: true }
+        amount:          { type: float,  required: true }
+        description:     { type: string, required: true }
+    response:
+      type: Quote
+
+  - id: update_quote_status
+    method: PATCH
+    path: /tasks/task/{taskId}/quotes/{contractorId}
+    status: planned
+    description: "Accept or reject a quote."
+    request:
+      body:
+        status: { type: enum(quote_status), required: true }
+    response:
+      type: Task
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TEMPLATES
+# Backend uses these to stamp actionSpace onto generated tasks.
+# renovation.yaml must reflect exactly the action keys defined above.
+# ══════════════════════════════════════════════════════════════════════════════
+
+templates:
+
+  renovation:
+    description: "Default template for home renovation projects."
+    prompt: task_generation
+    initial_action_space:
+      - request_quote
+      - view_details
+      - schedule_work
+      - upload_photo
+      - add_note
+    project_action_space:
+      - view_tasks
+      - review_quotes
+      - schedule_work
+      - upload_photo
+      - view_progress
+      - manage_team
+      - create_invoice
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# IMPLEMENTATION MAP
+# Where each piece of this contract lives in both codebases.
+# Use this to know exactly which file to open when making a change.
+# ══════════════════════════════════════════════════════════════════════════════
+
+implementation:
+
+  backend:
+    root: imaginetask-engine/app
+    models:            app/models/task.py          # TaskDocument, EventDocument, GenerateTasksRequest/Response
+    orchestrator:      app/core/orchestrator.py    # task generation pipeline
+    routes:            app/api/routes/tasks.py     # HTTP endpoints
+    template:          app/services/templates/library/renovation.yaml
+    prompt:            app/services/prompts/library/task_generation.yaml
+    ai_gateway:        app/services/ai/gateway.py
+    database:          app/services/database/
+
+  frontend:
+    root: buildervet/lib
+    task_model:        lib/models/task.dart
+    enums:             lib/models/enums/
+    action_registry:   lib/features/actions/action_registry.dart   # action keys → icon/colour/display
+    action_router:     lib/features/actions/action_router.dart      # key → screen/sheet/webview
+    contextual_ui:     lib/features/home/sections/contextual_action_section.dart
+    api_repository:    lib/data/remote/api_task_repository.dart     # implement when backend is ready
+    app_config:        lib/core/config/app_config.dart              # apiBaseUrl, useMockData flag
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CHANGELOG
+# Track breaking changes here so LLMs and developers have context.
+# ══════════════════════════════════════════════════════════════════════════════
+
+changelog:
+  - version: "1.0"
+    date: "2025-03-07"
+    changes:
+      - "Initial contract extracted from both codebases."
+      - "Aligned action keys: added view_details, schedule_work, view_tasks, view_progress, manage_team, create_invoice to ActionRegistry."
+      - "task_status wire format is snake_case (in_progress not inProgress)."
+      - "participant_role wire format is snake_case (gas_engineer not gasEngineer)."
