@@ -63,3 +63,5 @@ app.*.map.json
 /ios/Flutter/flutter_assets/
 /ios/Pods/
 /ios/.symlinks/
+firebase-adminsdk-key.json
+firebase-adminsdk-key.json
