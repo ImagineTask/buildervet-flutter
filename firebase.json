@@ -1,1 +1,53 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"imaginetask-engine","appId":"1:268920641222:android:ef30ee3c7b45e361b8a9c7","fileOutput":"android/app/google-services.json"}},"ios":{"default":{"projectId":"imaginetask-engine","appId":"1:268920641222:ios:2fb545523534d75fb8a9c7","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"macos":{"default":{"projectId":"imaginetask-engine","appId":"1:268920641222:ios:2fb545523534d75fb8a9c7","uploadDebugSymbols":false,"fileOutput":"macos/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"imaginetask-engine","configurations":{"android":"1:268920641222:android:ef30ee3c7b45e361b8a9c7","ios":"1:268920641222:ios:2fb545523534d75fb8a9c7","macos":"1:268920641222:ios:2fb545523534d75fb8a9c7","web":"1:268920641222:web:47aee04ceb220c19b8a9c7","windows":"1:268920641222:web:d768afe67d654494b8a9c7"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "imaginetask-engine",
+          "appId": "1:268920641222:android:ef30ee3c7b45e361b8a9c7",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "imaginetask-engine",
+          "appId": "1:268920641222:ios:2fb545523534d75fb8a9c7",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "macos": {
+        "default": {
+          "projectId": "imaginetask-engine",
+          "appId": "1:268920641222:ios:2fb545523534d75fb8a9c7",
+          "uploadDebugSymbols": false,
+          "fileOutput": "macos/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "imaginetask-engine",
+          "configurations": {
+            "android": "1:268920641222:android:ef30ee3c7b45e361b8a9c7",
+            "ios": "1:268920641222:ios:2fb545523534d75fb8a9c7",
+            "macos": "1:268920641222:ios:2fb545523534d75fb8a9c7",
+            "web": "1:268920641222:web:47aee04ceb220c19b8a9c7",
+            "windows": "1:268920641222:web:d768afe67d654494b8a9c7"
+          }
+        }
+      }
+    }
+  },
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "ui": {
+      "enabled": true
+    },
+    "singleProjectMode": true
+  }
+}

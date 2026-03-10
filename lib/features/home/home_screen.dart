@@ -1,166 +1,282 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_spacing.dart';
-import '../../providers/auth_provider.dart';
-import 'sections/search_section.dart';
-import 'sections/project_task_section.dart';
+import 'content/projects_content.dart';
+import 'content/tasks_content.dart';
+import '../AI/ai_request_screen.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final appUser = ref.watch(appUserProvider);
-    final userName = appUser.valueOrNull?.firstName;
-    final initials = appUser.valueOrNull?.initials ?? '?';
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
-    return SafeArea(
-      child: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            floating: true,
-            title: Text(
-              _greeting(userName),
-              style: Theme.of(context).textTheme.headlineSmall,
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline),
-                onPressed: () {
-                  // TODO: Create new task/project
-                },
-              ),
-              GestureDetector(
-                onTap: () => _showProfileSheet(context, ref),
-                child: Container(
-                  margin: const EdgeInsets.only(right: AppSpacing.md),
-                  child: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: AppColors.primary,
-                    child: Text(
-                      initials,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+class _HomeScreenState extends State<HomeScreen> {
+  int _selectedTab = 0; // 0 = Projects, 1 = Tasks
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Good Morning 👋',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Alex Johnson',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF1A1A2E),
+                        ),
+                      ),
+                    ],
+                  ),
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: const Color(0xFF6C63FF),
+                    child: const Text(
+                      'AJ',
+                      style: TextStyle(
                         color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Search Bar — taps open AI Request screen
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AiRequestScreen(),
+                  ),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: AbsorbPointer(
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Describe a new project with AI...',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 14,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.auto_awesome_rounded,
+                          color: const Color(0xFF6C63FF),
+                          size: 20,
+                        ),
+                        suffixIcon: Container(
+                          margin: const EdgeInsets.all(8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6C63FF),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'AI',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
+              const SizedBox(height: 16),
+
+              // Projects / Tasks Tab Switch
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    _TabButton(
+                      label: 'Projects',
+                      icon: Icons.folder_outlined,
+                      isSelected: _selectedTab == 0,
+                      onTap: () => setState(() => _selectedTab = 0),
+                    ),
+                    _TabButton(
+                      label: 'Tasks',
+                      icon: Icons.check_circle_outline,
+                      isSelected: _selectedTab == 1,
+                      onTap: () => setState(() => _selectedTab = 1),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Content Area: Projects or Tasks
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: _selectedTab == 0
+                    ? const ProjectsContent(key: ValueKey('projects'))
+                    : const TasksContent(key: ValueKey('tasks')),
+              ),
             ],
           ),
-          SliverToBoxAdapter(
-            child: Column(
-              children: const [
-                SizedBox(height: AppSpacing.sm),
-                SearchSection(),
-                SizedBox(height: AppSpacing.md),
-                ProjectTaskSection(),
-                SizedBox(height: AppSpacing.xl),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
+}
 
-  String _greeting(String? firstName) {
-    final hour = DateTime.now().hour;
-    final name = firstName != null ? ', $firstName' : '';
-    if (hour < 12) return 'Good morning$name!';
-    if (hour < 17) return 'Good afternoon$name!';
-    return 'Good evening$name!';
-  }
+class _TabButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool isSelected;
+  final VoidCallback onTap;
 
-  void _showProfileSheet(BuildContext context, WidgetRef ref) {
-    final appUser = ref.read(appUserProvider).valueOrNull;
+  const _TabButton({
+    required this.label,
+    required this.icon,
+    required this.isSelected,
+    required this.onTap,
+  });
 
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(AppSpacing.lg),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF6C63FF) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.textTertiary.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected ? Colors.white : Colors.grey[500],
               ),
-              const SizedBox(height: AppSpacing.lg),
-              CircleAvatar(
-                radius: 36,
-                backgroundColor: AppColors.primary.withOpacity(0.1),
-                child: Text(
-                  appUser?.initials ?? '?',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
+              const SizedBox(width: 6),
               Text(
-                appUser?.name ?? 'User',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                appUser?.email ?? '',
-                style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 4),
-              if (appUser?.role != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(AppSpacing.radiusFull),
-                  ),
-                  child: Text(
-                    appUser!.role[0].toUpperCase() + appUser.role.substring(1),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ),
-              const SizedBox(height: AppSpacing.lg),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    Navigator.pop(context);
-                    await ref.read(authServiceProvider).signOut();
-                  },
-                  icon: Icon(Icons.logout, size: 18, color: AppColors.error),
-                  label: Text(
-                    'Sign Out',
-                    style: TextStyle(color: AppColors.error),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: AppColors.error.withOpacity(0.3)),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : Colors.grey[500],
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+            ),
+          ],
         ),
       ),
     );
