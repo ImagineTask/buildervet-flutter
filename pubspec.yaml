@@ -21,9 +21,16 @@ dependencies:
 
   # Material Design
   cupertino_icons: ^1.0.6
+  path_provider: ^2.1.2
   firebase_core: ^4.5.0
   firebase_auth: ^6.2.0
   cloud_firestore: ^6.1.3
+  firebase_storage: ^13.1.0
+
+  # Imaging & HTTP
+  image_picker: ^1.0.7
+  pro_image_editor: ^12.0.6
+  http: ^1.2.0
 
 dev_dependencies:
   flutter_test:

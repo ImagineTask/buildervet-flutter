@@ -7,6 +7,7 @@ class Participant {
   final String email;
   final String? avatarUrl;
   final String? phone;
+  final String? country;
 
   const Participant({
     required this.userId,
@@ -15,6 +16,7 @@ class Participant {
     required this.email,
     this.avatarUrl,
     this.phone,
+    this.country,
   });
 
   factory Participant.fromJson(Map<String, dynamic> json) {
@@ -25,6 +27,7 @@ class Participant {
       email: json['email'] as String,
       avatarUrl: json['avatarUrl'] as String?,
       phone: json['phone'] as String?,
+      country: json['country'] as String?,
     );
   }
 
@@ -36,6 +39,7 @@ class Participant {
       'email': email,
       'avatarUrl': avatarUrl,
       'phone': phone,
+      'country': country,
     };
   }
 
@@ -46,6 +50,7 @@ class Participant {
     String? email,
     String? avatarUrl,
     String? phone,
+    String? country,
   }) {
     return Participant(
       userId: userId ?? this.userId,
@@ -54,6 +59,7 @@ class Participant {
       email: email ?? this.email,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       phone: phone ?? this.phone,
+      country: country ?? this.country,
     );
   }
 }

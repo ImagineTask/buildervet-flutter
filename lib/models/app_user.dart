@@ -6,6 +6,8 @@ class AppUser {
   final String? phone;
   final String? company;
   final String? avatarUrl;
+  final String? country;
+  final String? preferredLanguage;
   final DateTime createdAt;
 
   const AppUser({
@@ -16,6 +18,8 @@ class AppUser {
     this.phone,
     this.company,
     this.avatarUrl,
+    this.country,
+    this.preferredLanguage,
     required this.createdAt,
   });
 
@@ -38,6 +42,8 @@ class AppUser {
       phone: json['phone'] as String?,
       company: json['company'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
+      country: json['country'] as String?,
+      preferredLanguage: json['preferredLanguage'] as String?,
       createdAt: json['createdAt'] != null
           ? DateTime.parse(json['createdAt'] as String)
           : DateTime.now(),
@@ -52,6 +58,8 @@ class AppUser {
         'phone': phone,
         'company': company,
         'avatarUrl': avatarUrl,
+        'country': country,
+        'preferredLanguage': preferredLanguage,
         'createdAt': createdAt.toIso8601String(),
       };
 }
