@@ -75,7 +75,7 @@ class Conversation {
   final List<String> participantIds;
   final List<String> participantNames;
   final Message? lastMessage;
-  final int unreadCount;
+  final Map<String, int> unreadCounts;
   final String? taskId;
 
   const Conversation({
@@ -84,9 +84,11 @@ class Conversation {
     this.participantIds = const [],
     this.participantNames = const [],
     this.lastMessage,
-    this.unreadCount = 0,
+    this.unreadCounts = const {},
     this.taskId,
   });
+
+  int getUnreadCount(String userId) => unreadCounts[userId] ?? 0;
 
   factory Conversation.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
@@ -96,7 +98,7 @@ class Conversation {
       title: data['title'] ?? '',
       participantIds: List<String>.from(data['participantIds'] ?? []),
       participantNames: List<String>.from(data['participantNames'] ?? []),
-      unreadCount: data['unreadCount'] ?? 0,
+      unreadCounts: Map<String, int>.from(data['unreadCounts'] ?? {}),
       taskId: data['taskId'],
       lastMessage: lastMessageData != null ? Message.fromMap(lastMessageData, '') : null,
     );
@@ -107,7 +109,7 @@ class Conversation {
       'title': title,
       'participantIds': participantIds,
       'participantNames': participantNames,
-      'unreadCount': unreadCount,
+      'unreadCounts': unreadCounts,
       'taskId': taskId,
     };
   }

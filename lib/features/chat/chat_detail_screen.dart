@@ -1,18 +1,21 @@
+import 'dart:convert';
 import 'dart:io' show File;
 import 'dart:typed_data';
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_spacing.dart';
-import '../../models/message.dart';
-import '../../models/enums/message_type.dart';
+
+import '../../core/di/service_locator.dart';
 import '../../core/services/image_picker_service.dart';
 import '../../core/services/translation_service.dart';
-import '../../core/di/service_locator.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_spacing.dart';
+import '../../models/enums/message_type.dart';
+import '../../models/message.dart';
+import '../../shared/widgets/images/full_screen_image_viewer.dart';
 
 class ChatDetailScreen extends ConsumerStatefulWidget {
   final String conversationId;
@@ -33,16 +36,59 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _isTranslating = false;
   bool _isUploading = false;
+  String? _recipientCountry;
+  String _recipientLanguage = 'en';
 
-  final TranslationService _translationService = TranslationService(apiKey: 'YOUR_GOOGLE_API_KEY');
+  final TranslationService _translationService =
+      TranslationService(apiKey: 'your_api_key');
   final ImagePickerService _imagePickerService = ImagePickerService();
 
   String get _currentUserId => FirebaseAuth.instance.currentUser?.uid ?? 'me';
-  String get _currentUserName => FirebaseAuth.instance.currentUser?.displayName ?? 'Me';
+  String get _currentUserName =>
+      FirebaseAuth.instance.currentUser?.displayName ?? 'Me';
 
   @override
   void initState() {
     super.initState();
+    _fetchRecipientInfo();
+    _markAsRead();
+  }
+
+  Future<void> _markAsRead() async {
+    try {
+      await ref.read(chatRepositoryProvider).markAsRead(widget.conversationId, _currentUserId);
+    } catch (e) {
+      debugPrint('Error marking as read: $e');
+    }
+  }
+
+  Future<void> _fetchRecipientInfo() async {
+    try {
+      final repository = ref.read(chatRepositoryProvider);
+      final conversation =
+          await repository.getConversation(widget.conversationId);
+
+      if (conversation != null) {
+        // In a 1-to-1 chat, the recipient is the other participant
+        final recipientId = conversation.participantIds
+            .firstWhere((id) => id != _currentUserId, orElse: () => '');
+
+        if (recipientId.isNotEmpty) {
+          final recipient = await repository.getParticipant(recipientId);
+          if (mounted && recipient != null) {
+            setState(() {
+              _recipientCountry = recipient.country;
+              _recipientLanguage =
+                  TranslationService.getLanguageForCountry(_recipientCountry);
+            });
+            debugPrint(
+                'Recipient country: $_recipientCountry, target language: $_recipientLanguage');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching recipient info: $e');
+    }
   }
 
   Future<void> _sendMessage({String? text, String? imageUrl}) async {
@@ -50,9 +96,19 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
     String? finalImageUrl;
     if (imageUrl != null) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('You must be logged in to upload images.')),
+          );
+        }
+        return;
+      }
+
       setState(() => _isUploading = true);
       try {
-        print('ChatDetail: Starting upload for $imageUrl');
+        print('ChatDetail: Starting upload for $imageUrl by user ${user.uid}');
         final storageService = ref.read(storageServiceProvider);
         Uint8List bytes;
         String fileName;
@@ -64,7 +120,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           fileName = 'edited_${DateTime.now().millisecondsSinceEpoch}.jpg';
         } else if (kIsWeb) {
           print('ChatDetail: Handling Web path/blob');
-          final response = await ref.read(httpProvider).get(Uri.parse(imageUrl));
+          final response =
+              await ref.read(httpProvider).get(Uri.parse(imageUrl));
           bytes = response.bodyBytes;
           fileName = 'web_${DateTime.now().millisecondsSinceEpoch}.jpg';
         } else {
@@ -77,11 +134,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         finalImageUrl = await storageService.uploadImage(bytes, fileName);
         print('ChatDetail: Upload successful: $finalImageUrl');
       } catch (e, stack) {
-        print('ChatDetail: Upload error: $e');
+        String errorMessage = e.toString();
+        if (errorMessage.contains('unauthorized')) {
+          errorMessage = 'Upload failed: Unauthorized. Please check Firebase Storage rules.';
+        }
+        print('ChatDetail: Upload error: $errorMessage');
         print(stack);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to upload image: $e')),
+            SnackBar(content: Text(errorMessage)),
           );
         }
         setState(() => _isUploading = false);
@@ -96,9 +157,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     if (content.isNotEmpty) {
       setState(() => _isTranslating = true);
       try {
-        // For demo, we translate to Japanese. 
-        // In a real app, this would be the recipient's preferred language.
-        final result = await _translationService.translate(content, 'ja');
+        // Translate to the recipient's language based on their country
+        final result =
+            await _translationService.translate(content, _recipientLanguage);
         translatedContent = result.translatedText;
       } catch (e) {
         debugPrint('Translation error: $e');
@@ -124,7 +185,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   Future<void> _pickImage() async {
-    final String? imagePath = await _imagePickerService.pickAndEditImage(context);
+    final String? imagePath =
+        await _imagePickerService.pickAndEditImage(context);
     if (imagePath != null) {
       _sendMessage(imageUrl: imagePath);
     }
@@ -152,7 +214,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             CircleAvatar(
               radius: 18,
               backgroundColor: AppColors.primary.withOpacity(0.1),
-              child: Text(widget.title[0], style: const TextStyle(fontSize: 14, color: AppColors.primary)),
+              child: Text(widget.title[0],
+                  style:
+                      const TextStyle(fontSize: 14, color: AppColors.primary)),
             ),
             const SizedBox(width: AppSpacing.sm),
             Text(widget.title, style: const TextStyle(fontSize: 16)),
@@ -166,7 +230,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         children: [
           Expanded(
             child: StreamBuilder<List<Message>>(
-              stream: ref.watch(chatRepositoryProvider).getMessages(widget.conversationId),
+              stream: ref
+                  .watch(chatRepositoryProvider)
+                  .getMessages(widget.conversationId),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -176,7 +242,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                 }
                 final messages = snapshot.data ?? [];
                 if (messages.isEmpty) {
-                  return const Center(child: Text('No messages yet', style: TextStyle(color: AppColors.textTertiary)));
+                  return const Center(
+                      child: Text('No messages yet',
+                          style: TextStyle(color: AppColors.textTertiary)));
                 }
 
                 _scrollToBottom();
@@ -203,7 +271,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               padding: const EdgeInsets.all(8.0),
               child: Text(
                 _isUploading ? 'Uploading image...' : 'Translating...',
-                style: const TextStyle(fontSize: 12, color: AppColors.textTertiary),
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textTertiary),
               ),
             ),
           _buildInput(),
@@ -218,14 +287,18 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, -2)),
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, -2)),
         ],
       ),
       child: SafeArea(
         child: Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
+              icon: const Icon(Icons.add_circle_outline,
+                  color: AppColors.primary),
               onPressed: _pickImage,
             ),
             Expanded(
@@ -239,7 +312,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                   ),
                   fillColor: AppColors.surfaceLight,
                   filled: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
                 maxLines: null,
               ),
@@ -287,19 +361,20 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
   Future<void> _checkLanguage() async {
     if (widget.isMe || widget.message.content.isEmpty) return;
-    
+
     // Assume current user's language is English ('en') for this demo
     const currentUserLang = 'en';
-    
+
     try {
-      final detectedLang = await widget.translationService.detectLanguage(widget.message.content);
+      final detectedLang = await widget.translationService
+          .detectLanguage(widget.message.content);
       if (mounted) {
         setState(() {
           _isSameLanguage = detectedLang == currentUserLang;
           _hasCheckedLanguage = true;
           // If we already have a translation and languages differ, show it
           if (_translatedText != null && !_isSameLanguage) {
-            _showTranslation = true;
+            _showTranslation = false;
           }
         });
       }
@@ -316,7 +391,8 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
     setState(() => _isLoadingTranslation = true);
     try {
-      final result = await widget.translationService.translate(widget.message.content, 'en');
+      final result = await widget.translationService
+          .translate(widget.message.content, 'en');
       if (mounted) {
         setState(() {
           _translatedText = result.translatedText;
@@ -338,17 +414,19 @@ class _MessageBubbleState extends State<_MessageBubble> {
   @override
   Widget build(BuildContext context) {
     // Determine if we should even show the translation button
-    final bool canTranslate = !widget.isMe && 
-                              widget.message.content.isNotEmpty && 
-                              _hasCheckedLanguage && 
-                              !_isSameLanguage;
+    final bool canTranslate = !widget.isMe &&
+        widget.message.content.isNotEmpty &&
+        _hasCheckedLanguage &&
+        !_isSameLanguage;
     return Align(
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(bottom: AppSpacing.md),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        constraints:
+            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
         child: Column(
-          crossAxisAlignment: widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -364,24 +442,78 @@ class _MessageBubbleState extends State<_MessageBubble> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (widget.message.type == MessageType.image && widget.message.imageUrl != null)
+                  if (widget.message.type == MessageType.image &&
+                      widget.message.imageUrl != null)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
-                        child: widget.message.imageUrl!.startsWith('blob:') ||
-                               !widget.message.imageUrl!.startsWith('http')
-                            ? (kIsWeb 
-                                ? Image.network(widget.message.imageUrl!) 
-                                : Image.file(File(widget.message.imageUrl!)))
-                            : Image.network(widget.message.imageUrl!, fit: BoxFit.cover),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => FullScreenImageViewer(
+                                  imageUrl: widget.message.imageUrl!,
+                                  title: widget.message.senderName,
+                                ),
+                              ),
+                            );
+                          },
+                          child: Hero(
+                            tag: widget.message.imageUrl!,
+                            child: widget.message.imageUrl!.startsWith('blob:') ||
+                                    !widget.message.imageUrl!.startsWith('http')
+                                ? (kIsWeb
+                                    ? Image.network(widget.message.imageUrl!)
+                                    : Image.file(File(widget.message.imageUrl!)))
+                                : Image.network(
+                                    widget.message.imageUrl!,
+                                    fit: BoxFit.cover,
+                                    loadingBuilder: (context, child, loadingProgress) {
+                                      if (loadingProgress == null) return child;
+                                      return Container(
+                                        height: 200,
+                                        width: double.infinity,
+                                        color: AppColors.surfaceLight,
+                                        child: const Center(
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (context, error, stackTrace) {
+                                      print('Image Load Error: $error');
+                                      return Container(
+                                        height: 200,
+                                        width: double.infinity,
+                                        color: AppColors.surfaceLight,
+                                        child: Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(Icons.broken_image, 
+                                                color: AppColors.error, size: 40),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                              'Failed to load image',
+                                              style: TextStyle(
+                                                color: AppColors.textTertiary,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ),
                       ),
                     ),
                   if (widget.message.content.isNotEmpty)
                     Text(
                       widget.message.content,
                       style: TextStyle(
-                        color: widget.isMe ? Colors.white : AppColors.textPrimary,
+                        color:
+                            widget.isMe ? Colors.white : AppColors.textPrimary,
                         fontSize: 15,
                       ),
                     ),
@@ -394,10 +526,18 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 child: Padding(
                   padding: const EdgeInsets.only(top: 4, left: 4),
                   child: _isLoadingTranslation
-                      ? const SizedBox(height: 12, width: 12, child: CircularProgressIndicator(strokeWidth: 2))
+                      ? const SizedBox(
+                          height: 12,
+                          width: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2))
                       : Text(
-                          _showTranslation ? 'Hide translation' : 'See translation',
-                          style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w500),
+                          _showTranslation
+                              ? 'Hide translation'
+                              : 'See translation',
+                          style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w500),
                         ),
                 ),
               ),
@@ -411,7 +551,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                 ),
                 child: Text(
                   _translatedText!,
-                  style: const TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: AppColors.textPrimary),
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontStyle: FontStyle.italic,
+                      color: AppColors.textPrimary),
                 ),
               ),
           ],

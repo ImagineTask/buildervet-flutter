@@ -1,7 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../../models/enums/participant_role.dart';
 import '../../models/message.dart';
 import '../../models/participant.dart';
-import '../../models/enums/participant_role.dart';
 
 class FirestoreChatRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -17,6 +18,22 @@ class FirestoreChatRepository {
             .toList());
   }
 
+  Future<Conversation?> getConversation(String conversationId) async {
+    final doc =
+        await _firestore.collection('conversations').doc(conversationId).get();
+    if (doc.exists) {
+      return Conversation.fromFirestore(doc);
+    }
+    return null;
+  }
+
+  Future<void> markAsRead(String conversationId, String userId) async {
+    final docRef = _firestore.collection('conversations').doc(conversationId);
+    await docRef.update({
+      'unreadCounts.$userId': 0,
+    });
+  }
+
   Stream<List<Message>> getMessages(String conversationId) {
     return _firestore
         .collection('conversations')
@@ -24,37 +41,53 @@ class FirestoreChatRepository {
         .collection('messages')
         .orderBy('sentAt', descending: false)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => Message.fromFirestore(doc))
-            .toList());
+        .map((snapshot) =>
+            snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
   }
 
   Future<void> sendMessage(Message message) async {
     final messageMap = message.toMap();
-    
-    // Add message to sub-collection
-    await _firestore
-        .collection('conversations')
-        .doc(message.conversationId)
-        .collection('messages')
-        .add(messageMap);
 
-    // Update last message in conversation document
-    await _firestore
-        .collection('conversations')
-        .doc(message.conversationId)
-        .update({
+    // Add message to sub-collection
+    final conversationDoc = _firestore.collection('conversations').doc(message.conversationId);
+    final conversationSnapshot = await conversationDoc.get();
+    
+    Map<String, int> updatedUnreadCounts = {};
+    if (conversationSnapshot.exists) {
+      final data = conversationSnapshot.data() as Map<String, dynamic>;
+      updatedUnreadCounts = Map<String, int>.from(data['unreadCounts'] ?? {});
+    }
+
+    // Increment count for everyone except the sender
+    final participantIds = List<String>.from(conversationSnapshot.data()?['participantIds'] ?? []);
+    for (final id in participantIds) {
+      if (id != message.senderId) {
+        updatedUnreadCounts[id] = (updatedUnreadCounts[id] ?? 0) + 1;
+      }
+    }
+
+    // Update message and conversation metadata
+    final batch = _firestore.batch();
+    
+    final newMessageRef = conversationDoc.collection('messages').doc();
+    batch.set(newMessageRef, messageMap);
+    
+    batch.update(conversationDoc, {
       'lastMessage': messageMap,
       'updatedAt': FieldValue.serverTimestamp(),
+      'unreadCounts': updatedUnreadCounts,
     });
+
+    await batch.commit();
   }
-  
-  Future<String> createConversation(String title, List<String> participantIds, {String? customId}) async {
+
+  Future<String> createConversation(String title, List<String> participantIds,
+      {String? customId}) async {
     final data = {
       'title': title,
       'participantIds': participantIds,
       'updatedAt': FieldValue.serverTimestamp(),
-      'unreadCount': 0,
+      'unreadCounts': {for (var id in participantIds) id: 0},
     };
 
     if (customId != null) {
@@ -92,5 +125,26 @@ class FirestoreChatRepository {
         );
       }).toList();
     });
+  }
+
+  Future<Participant?> getParticipant(String userId) async {
+    try {
+      final doc = await _firestore.collection('users').doc(userId).get();
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        return Participant(
+          userId: doc.id,
+          name: data['name'] ?? '',
+          role: ParticipantRole.fromString(data['role'] ?? 'homeowner'),
+          email: data['email'] ?? '',
+          avatarUrl: data['avatarUrl'],
+          phone: data['phone'],
+          country: data['country'],
+        );
+      }
+    } catch (e) {
+      print('Error fetching participant: $e');
+    }
+    return null;
   }
 }

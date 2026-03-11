@@ -95,7 +95,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     )
                   : SliverList(
                       delegate: SliverChildBuilderDelegate(
-                        (context, index) => _ConversationTile(conversation: filtered[index]),
+                        (context, index) => _ConversationTile(
+                          conversation: filtered[index],
+                          currentUserId: _currentUserId,
+                        ),
                         childCount: filtered.length,
                       ),
                     ),
@@ -111,8 +114,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
 class _ConversationTile extends StatelessWidget {
   final Conversation conversation;
+  final String currentUserId;
 
-  const _ConversationTile({required this.conversation});
+  const _ConversationTile({
+    required this.conversation,
+    required this.currentUserId,
+  });
 
   String _formatTime(DateTime? date) {
     if (date == null) return '';
@@ -126,6 +133,7 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lastMessage = conversation.lastMessage;
+    final unreadCount = conversation.getUnreadCount(currentUserId);
     final String lastMsgText = lastMessage?.type == MessageType.image
         ? 'Sent an image'
         : (lastMessage?.content ?? 'No messages');
@@ -152,7 +160,7 @@ class _ConversationTile extends StatelessWidget {
             child: Text(
               conversation.title,
               style: TextStyle(
-                fontWeight: conversation.unreadCount > 0
+                fontWeight: unreadCount > 0
                     ? FontWeight.bold
                     : FontWeight.normal,
               ),
@@ -162,7 +170,7 @@ class _ConversationTile extends StatelessWidget {
             _formatTime(lastMessage?.sentAt),
             style: TextStyle(
               fontSize: 12,
-              color: conversation.unreadCount > 0
+              color: unreadCount > 0
                   ? AppColors.primary
                   : AppColors.textTertiary,
             ),
@@ -177,14 +185,14 @@ class _ConversationTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: conversation.unreadCount > 0
+                color: unreadCount > 0
                     ? AppColors.textPrimary
                     : AppColors.textSecondary,
                 fontSize: 13,
               ),
             ),
           ),
-          if (conversation.unreadCount > 0)
+          if (unreadCount > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -192,7 +200,7 @@ class _ConversationTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
-                '${conversation.unreadCount}',
+                '$unreadCount',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 11,
