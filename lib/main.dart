@@ -8,6 +8,7 @@ import 'features/Calendar/calendar_screen.dart';
 import 'features/Chat/chat_screen.dart';
 import 'features/Alert/alert_screen.dart';
 import 'features/auth/auth_screen.dart';
+import 'features/Home/state/project_selection_state.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,7 +54,13 @@ class AuthGate extends StatelessWidget {
             ),
           );
         }
-        if (snapshot.hasData) return const MainNavigation();
+        if (snapshot.hasData) {
+          // ── ProjectSelectionState wraps MainNavigation so the selected
+          //    project persists across all tabs and navigation events ──────
+          return const ProjectSelectionState(
+            child: MainNavigation(),
+          );
+        }
         return const AuthScreen();
       },
     );

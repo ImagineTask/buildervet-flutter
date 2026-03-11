@@ -9,11 +9,13 @@ import '../../Home/services/tasks_service.dart';
 class TaskProjectTypeCard extends StatefulWidget {
   final TaskModel project;
   final TasksService service;
+  final bool showViewTasks;
 
   const TaskProjectTypeCard({
     super.key,
     required this.project,
     required this.service,
+    this.showViewTasks = true,
   });
 
   @override
@@ -122,44 +124,46 @@ class _TaskProjectTypeCardState extends State<TaskProjectTypeCard> {
                 ),
                 const SizedBox(height: 12),
 
-                // View tasks toggle
-                GestureDetector(
-                  onTap: () => setState(() => _expanded = !_expanded),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _expanded ? 'Hide tasks' : 'View tasks',
-                        style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF6C63FF)),
-                      ),
-                      const SizedBox(width: 4),
-                      AnimatedRotation(
-                        turns: _expanded ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 200),
-                        child: const Icon(Icons.keyboard_arrow_down,
-                            size: 16, color: Color(0xFF6C63FF)),
-                      ),
-                    ],
+                // View tasks toggle — hidden when card is in selected/header mode
+                if (widget.showViewTasks)
+                  GestureDetector(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _expanded ? 'Hide tasks' : 'View tasks',
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF6C63FF)),
+                        ),
+                        const SizedBox(width: 4),
+                        AnimatedRotation(
+                          turns: _expanded ? 0.5 : 0,
+                          duration: const Duration(milliseconds: 200),
+                          child: const Icon(Icons.keyboard_arrow_down,
+                              size: 16, color: Color(0xFF6C63FF)),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
 
-          // Expandable task list
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: ProjectTasksSubList(
-                projectTaskId: widget.project.taskId,
-                service: widget.service),
-            crossFadeState: _expanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 250),
-          ),
+          // Expandable task list — also hidden when showViewTasks is false
+          if (widget.showViewTasks)
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: ProjectTasksSubList(
+                  projectTaskId: widget.project.taskId,
+                  service: widget.service),
+              crossFadeState: _expanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 250),
+            ),
         ],
       ),
     );
@@ -391,3 +395,4 @@ class ProjectTaskRow extends StatelessWidget {
     );
   }
 }
+

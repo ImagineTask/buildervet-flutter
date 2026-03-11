@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'content/projects_content.dart';
 import 'content/tasks_content.dart';
 import '../AI/ai_request_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'profile/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -11,8 +13,35 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedTab = 0; // 0 = Projects, 1 = Tasks
+  int _selectedTab = 0;
   final TextEditingController _searchController = TextEditingController();
+
+  User? get _user => FirebaseAuth.instance.currentUser;
+
+  String get _displayName {
+    final name = _user?.displayName;
+    if (name != null && name.isNotEmpty) return name;
+    final email = _user?.email ?? '';
+    return email.split('@').first;
+  }
+
+  String get _initials {
+    final name = _user?.displayName ?? '';
+    final parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
+    } else if (name.isNotEmpty) {
+      return name[0].toUpperCase();
+    }
+    return '?';
+  }
+
+  String get _greeting {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good Morning 👋';
+    if (hour < 17) return 'Good Afternoon 👋';
+    return 'Good Evening 👋';
+  }
 
   @override
   void dispose() {
@@ -38,16 +67,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Good Morning 👋',
+                        _greeting,
                         style: TextStyle(
                           fontSize: 14,
                           color: Colors.grey[600],
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Alex Johnson',
-                        style: TextStyle(
+                      Text(
+                        _displayName,
+                        style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF1A1A2E),
@@ -55,15 +84,23 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: const Color(0xFF6C63FF),
-                    child: const Text(
-                      'AJ',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
+                  GestureDetector(
+                    onTap: () => ProfileScreen.show(context),
+                    child: CircleAvatar(
+                      radius: 24,
+                      backgroundColor: const Color(0xFF6C63FF),
+                      backgroundImage: _user?.photoURL != null
+                          ? NetworkImage(_user!.photoURL!)
+                          : null,
+                      child: _user?.photoURL == null
+                          ? Text(
+                              _initials,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
                     ),
                   ),
                 ],
@@ -282,3 +319,18 @@ class _StatCard extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
