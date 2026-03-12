@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'storage_service.dart';
+import 'logger_service.dart';
 
 class FirebaseStorageService implements StorageService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -12,7 +13,7 @@ class FirebaseStorageService implements StorageService {
     String? contentType,
   }) async {
     try {
-      print('FirebaseStorage: Starting upload to $path (${bytes.length} bytes)');
+      Log.i('FirebaseStorage: Starting upload to $path (${bytes.length} bytes)');
       final ref = _storage.ref().child(path);
 
       // Adding metadata helps with mime types and browser behavior
@@ -24,18 +25,18 @@ class FirebaseStorageService implements StorageService {
       
       // Monitor progress for debugging
       uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        print('FirebaseStorage: Progress ${snapshot.bytesTransferred}/${snapshot.totalBytes}');
+        Log.d('FirebaseStorage: Progress ${snapshot.bytesTransferred}/${snapshot.totalBytes}');
       }, onError: (e) {
-        print('FirebaseStorage: Task stream error: $e');
+        Log.e('FirebaseStorage: Task stream error: $e', e);
       });
 
       final snapshot = await uploadTask;
-      print('FirebaseStorage: Upload complete, getting URL...');
+      Log.i('FirebaseStorage: Upload complete, getting URL...');
       final url = await snapshot.ref.getDownloadURL();
-      print('FirebaseStorage: Got URL: $url');
+      Log.i('FirebaseStorage: Got URL: $url');
       return url;
     } catch (e) {
-      print('FirebaseStorage: Error in uploadFile: $e');
+      Log.e('FirebaseStorage: Error in uploadFile: $e', e);
       rethrow;
     }
   }
@@ -45,7 +46,7 @@ class FirebaseStorageService implements StorageService {
     try {
       await _storage.ref().child(path).delete();
     } catch (e) {
-      print('FirebaseStorage: Error in deleteFile: $e');
+      Log.e('FirebaseStorage: Error in deleteFile: $e', e);
       rethrow;
     }
   }

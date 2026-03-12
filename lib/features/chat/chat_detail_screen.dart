@@ -10,6 +10,7 @@ import 'package:path/path.dart' as p;
 
 import '../../core/di/service_locator.dart';
 import '../../core/services/image_picker_service.dart';
+import '../../core/services/logger_service.dart';
 import '../../core/services/translation_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
@@ -47,7 +48,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   bool _hasMore = true;
 
   final TranslationService _translationService = TranslationService(
-    apiKey: const String.fromEnvironment('Google_Cloud_Translate_API_KEY'),
+    apiKey: const String.fromEnvironment('GOOGLE_CLOUD_TRANSLATE_API_KEY'),
   );
   final ImagePickerService _imagePickerService = ImagePickerService();
 
@@ -60,6 +61,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     super.initState();
     _fetchRecipientInfo();
     _markAsRead();
+
+    // 检查 API Key 是否读取成功
+    const apiKey = String.fromEnvironment('GOOGLE_CLOUD_TRANSLATE_API_KEY');
+    if (apiKey.isEmpty) {
+      Log.w('⚠️ WARNING: GOOGLE_CLOUD_TRANSLATE_API_KEY is NOT defined!');
+    } else {
+      Log.i(
+          '✅ GOOGLE_CLOUD_TRANSLATE_API_KEY loaded successfully. (Starts with: ${apiKey.substring(0, 4)}...)');
+    }
   }
 
   @override
@@ -92,7 +102,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   Future<void> _markAsRead() async {
     try {
-      await ref.read(chatRepositoryProvider).markAsRead(widget.conversationId, _currentUserId);
+      await ref
+          .read(chatRepositoryProvider)
+          .markAsRead(widget.conversationId, _currentUserId);
     } catch (e) {
       debugPrint('Error marking as read: $e');
     }
@@ -117,20 +129,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               _recipientLanguage =
                   TranslationService.getLanguageForCountry(_recipientCountry);
               _recipientAvatarUrl = recipient.avatarUrl;
-              final names = recipient.name.split(' ');
-              if (names.length >= 2) {
-                _recipientInitials = (names[0][0] + names[1][0]).toUpperCase();
-              } else {
-                _recipientInitials = recipient.name.isNotEmpty ? recipient.name[0].toUpperCase() : '?';
-              }
+              _recipientInitials = recipient.initials;
             });
-            debugPrint(
+            Log.i(
                 'Recipient country: $_recipientCountry, target language: $_recipientLanguage');
           }
         }
       }
-    } catch (e) {
-      debugPrint('Error fetching recipient info: $e');
+    } catch (e, stack) {
+      Log.e('Error fetching recipient info: $e', e, stack);
     }
   }
 
@@ -143,7 +150,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       if (user == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('You must be logged in to upload images.')),
+            const SnackBar(
+                content: Text('You must be logged in to upload images.')),
           );
         }
         return;
@@ -151,24 +159,24 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
       setState(() => _isUploading = true);
       try {
-        print('ChatDetail: Starting upload for $imageUrl by user ${user.uid}');
+        Log.i('ChatDetail: Starting upload for $imageUrl by user ${user.uid}');
         final storageService = ref.read(storageLocatorProvider);
         Uint8List bytes;
         String fileName;
 
         if (imageUrl.startsWith('data:image')) {
-          print('ChatDetail: Handling data URL');
+          Log.i('ChatDetail: Handling data URL');
           final base64String = imageUrl.split(',').last;
           bytes = base64Decode(base64String);
           fileName = 'edited_${DateTime.now().millisecondsSinceEpoch}.jpg';
         } else if (kIsWeb) {
-          print('ChatDetail: Handling Web path/blob');
+          Log.i('ChatDetail: Handling Web path/blob');
           final response =
               await ref.read(httpProvider).get(Uri.parse(imageUrl));
           bytes = response.bodyBytes;
           fileName = 'web_${DateTime.now().millisecondsSinceEpoch}.jpg';
         } else {
-          print('ChatDetail: Handling local file');
+          Log.i('ChatDetail: Handling local file');
           final file = File(imageUrl);
           fileName = p.basename(imageUrl);
           bytes = await file.readAsBytes();
@@ -179,14 +187,14 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           path: 'chat_images/$fileName',
           contentType: 'image/jpeg',
         );
-        print('ChatDetail: Upload successful: $finalImageUrl');
+        Log.i('ChatDetail: Upload successful: $finalImageUrl');
       } catch (e, stack) {
         String errorMessage = e.toString();
         if (errorMessage.contains('unauthorized')) {
-          errorMessage = 'Upload failed: Unauthorized. Please check Firebase Storage rules.';
+          errorMessage =
+              'Upload failed: Unauthorized. Please check Firebase Storage rules.';
         }
-        print('ChatDetail: Upload error: $errorMessage');
-        print(stack);
+        Log.e('ChatDetail: Upload error: $errorMessage', e, stack);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(errorMessage)),
@@ -235,7 +243,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     await ref.read(chatRepositoryProvider).sendMessage(newMessage);
     _controller.clear();
     // With reverse: true, 0 is the bottom.
-    _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+    _scrollController.animateTo(0,
+        duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
   }
 
   Future<void> _pickImage() async {
@@ -249,7 +258,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final appUser = ref.watch(appUserProvider).valueOrNull;
-    final userLanguage = TranslationService.getLanguageForCountry(appUser?.country);
+    final userLanguage =
+        TranslationService.getLanguageForCountry(appUser?.country);
 
     return Scaffold(
       appBar: AppBar(
@@ -273,9 +283,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         children: [
           Expanded(
             child: StreamBuilder<List<Message>>(
-              stream: ref
-                  .watch(chatRepositoryProvider)
-                  .getMessages(widget.conversationId, limit: _messageLimit > 0 ? _messageLimit : 10),
+              stream: ref.watch(chatRepositoryProvider).getMessages(
+                  widget.conversationId,
+                  limit: _messageLimit > 0 ? _messageLimit : 10),
               builder: (context, snapshot) {
                 final messages = snapshot.data ?? [];
 
@@ -306,13 +316,14 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     itemBuilder: (context, index) {
                       if (index == messages.length) {
                         return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                          padding:
+                              EdgeInsets.symmetric(vertical: AppSpacing.md),
                           child: Center(
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                         );
                       }
-                      
+
                       final message = messages[index];
                       final isMe = message.senderId == _currentUserId;
                       return _MessageBubble(
@@ -448,9 +459,12 @@ class _MessageBubbleState extends State<_MessageBubble> {
           .detectLanguage(widget.message.content);
       if (mounted) {
         setState(() {
-          _isSameLanguage = detectedLang == currentUserLang;
+          final targetShort = currentUserLang.split('-').first.toLowerCase();
+          final detectedShort = detectedLang.split('-').first.toLowerCase();
+
+          _isSameLanguage = detectedShort == targetShort;
           _hasCheckedLanguage = true;
-          
+
           // Bidirectional Logic:
           // 1. If I'm the recipient and languages differ, auto-show translation
           if (!widget.isMe && !_isSameLanguage && _translatedText != null) {
@@ -505,10 +519,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
   @override
   Widget build(BuildContext context) {
     // Determine if we should even show the translation button
-    final bool canTranslate = 
-        widget.message.content.isNotEmpty &&
+    final bool canTranslate = widget.message.content.isNotEmpty &&
         _hasCheckedLanguage &&
-        (!_isSameLanguage || (widget.isMe && widget.message.translatedContent != null));
+        (!_isSameLanguage ||
+            (widget.isMe && widget.message.translatedContent != null));
     return Align(
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -552,40 +566,47 @@ class _MessageBubbleState extends State<_MessageBubble> {
                           },
                           child: Hero(
                             tag: widget.message.imageUrl!,
-                            child: widget.message.imageUrl!.startsWith('blob:') ||
+                            child: widget.message.imageUrl!
+                                        .startsWith('blob:') ||
                                     !widget.message.imageUrl!.startsWith('http')
                                 ? (kIsWeb
                                     ? Image.network(widget.message.imageUrl!)
-                                    : Image.file(File(widget.message.imageUrl!)))
+                                    : Image.file(
+                                        File(widget.message.imageUrl!)))
                                 : Image.network(
                                     widget.message.imageUrl!,
                                     fit: BoxFit.cover,
                                     width: double.infinity,
                                     height: 200,
                                     // Optimize: don't load full quality for preview
-                                    cacheWidth: 400, 
-                                    loadingBuilder: (context, child, loadingProgress) {
+                                    cacheWidth: 400,
+                                    loadingBuilder:
+                                        (context, child, loadingProgress) {
                                       if (loadingProgress == null) return child;
                                       return Container(
                                         height: 200,
                                         width: double.infinity,
                                         color: AppColors.surfaceLight,
                                         child: const Center(
-                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
                                         ),
                                       );
                                     },
                                     errorBuilder: (context, error, stackTrace) {
-                                      print('Image Load Error: $error');
+                                      Log.e('Image Load Error: $error', error,
+                                          stackTrace);
                                       return Container(
                                         height: 200,
                                         width: double.infinity,
                                         color: AppColors.surfaceLight,
                                         child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
-                                            const Icon(Icons.broken_image, 
-                                                color: AppColors.error, size: 40),
+                                            const Icon(Icons.broken_image,
+                                                color: AppColors.error,
+                                                size: 40),
                                             const SizedBox(height: 8),
                                             Text(
                                               'Failed to load image',
@@ -628,7 +649,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       : Text(
                           _showTranslation
                               ? 'Hide translation'
-                              : (widget.isMe ? 'See sent translation' : 'See translation'),
+                              : (widget.isMe
+                                  ? 'See sent translation'
+                                  : 'See translation'),
                           style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.primary,

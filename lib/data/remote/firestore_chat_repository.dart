@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/services/logger_service.dart';
 
 import '../../models/enums/participant_role.dart';
 import '../../models/message.dart';
@@ -145,8 +146,8 @@ class FirestoreChatRepository {
           country: data['country'],
         );
       }
-    } catch (e) {
-      print('Error fetching participant: $e');
+    } catch (e, stack) {
+      Log.e('Error fetching participant: $e', e, stack);
     }
     return null;
   }

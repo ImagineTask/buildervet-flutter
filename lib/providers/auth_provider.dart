@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/services/storage_service.dart';
+import '../core/services/logger_service.dart';
 import '../models/app_user.dart';
 
 /// Firebase Auth instance
@@ -34,8 +35,14 @@ final appUserProvider = FutureProvider<AppUser?>((ref) async {
 
 /// Auth actions
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth;
+  final FirebaseFirestore _db;
+
+  AuthService({
+    FirebaseAuth? auth,
+    FirebaseFirestore? db,
+  })  : _auth = auth ?? FirebaseAuth.instance,
+        _db = db ?? FirebaseFirestore.instance;
 
   /// Sign up with email/password and create user profile
   Future<AppUser> signUp({
@@ -143,11 +150,15 @@ class AuthService {
     // Update Firebase Auth profile
     await _auth.currentUser?.updatePhotoURL(url);
     
+    Log.i('Avatar updated successfully for user $uid. URL: $url');
     return url;
   }
 }
 
 /// Auth service provider
 final authServiceProvider = Provider<AuthService>((ref) {
-  return AuthService();
+  return AuthService(
+    auth: ref.watch(firebaseAuthProvider),
+    db: FirebaseFirestore.instance,
+  );
 });

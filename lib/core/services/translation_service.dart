@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import '../constants/countries.dart';
+import 'logger_service.dart';
 
 class TranslationService {
   final String apiKey;
@@ -25,6 +26,11 @@ class TranslationService {
     final languageCode = targetLanguage.split('-').first.toLowerCase();
 
     try {
+      // Optimise: Detection might have already happened in context, 
+      // or if we had sourceLanguage passed we could skip.
+      // For now, we proceed to Google API which handles matching natively 
+      // but we ensure parameters are clean.
+
       final response = await http.post(
         Uri.parse('$_baseUrl?key=$apiKey'),
         body: json.encode({
@@ -55,8 +61,8 @@ class TranslationService {
           translatedText: text,
           sourceLanguage: 'unknown',
           targetLanguage: languageCode);
-    } catch (e) {
-      print('Translation error: $e');
+    } catch (e, stack) {
+      Log.e('Translation error: $e', e, stack);
       return TranslationResult(
           translatedText: text,
           sourceLanguage: 'unknown',
@@ -83,8 +89,8 @@ class TranslationService {
         }
       }
       return 'unknown';
-    } catch (e) {
-      print('Detection error: $e');
+    } catch (e, stack) {
+      Log.e('Detection error: $e', e, stack);
       return 'unknown';
     }
   }

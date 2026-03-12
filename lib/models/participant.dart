@@ -10,11 +10,13 @@ class Participant {
   final String? country;
 
   String get initials {
-    final parts = name.split(' ');
+    final parts = name.trim().split(' ').where((s) => s.isNotEmpty).toList();
     if (parts.length >= 2) {
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }
-    return name.isNotEmpty ? name[0].toUpperCase() : '?';
+    return parts.isNotEmpty && parts[0].isNotEmpty
+        ? parts[0][0].toUpperCase()
+        : '?';
   }
 
   const Participant({
