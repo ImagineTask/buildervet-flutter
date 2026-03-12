@@ -6,7 +6,7 @@ import 'invite_sheet.dart';
 
 /// Bottom sheet opened by the + button.
 /// Allows searching users by email and adding them as a contact.
-/// If no user is found, shows an option to invite via SMS.
+/// If no user is found, shows an option to invite via link.
 class AddContactSheet extends StatefulWidget {
   final ContactsService service;
   final InviteService inviteService;
@@ -19,7 +19,6 @@ class AddContactSheet extends StatefulWidget {
     required this.existingContactIds,
   });
 
-  /// Convenience method to show the sheet from any screen.
   static void show(
     BuildContext context, {
     required ContactsService service,
@@ -46,7 +45,8 @@ class _AddContactSheetState extends State<AddContactSheet> {
   final TextEditingController _emailController = TextEditingController();
   List<NetworkUser> _results = [];
   bool _loading = false;
-  String? _message;
+  bool _searched = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -57,8 +57,9 @@ class _AddContactSheetState extends State<AddContactSheet> {
   Future<void> _search() async {
     setState(() {
       _loading = true;
-      _message = null;
+      _error = null;
       _results = [];
+      _searched = false;
     });
     try {
       final results = await widget.service.searchByEmail(
@@ -67,10 +68,10 @@ class _AddContactSheetState extends State<AddContactSheet> {
       );
       setState(() {
         _results = results;
-        if (results.isEmpty) _message = 'No users found with that email.';
+        _searched = true;
       });
     } catch (_) {
-      setState(() => _message = 'Something went wrong. Try again.');
+      setState(() => _error = 'Something went wrong. Try again.');
     } finally {
       setState(() => _loading = false);
     }
@@ -79,6 +80,14 @@ class _AddContactSheetState extends State<AddContactSheet> {
   Future<void> _add(NetworkUser user) async {
     await widget.service.addContact(user.uid);
     if (mounted) Navigator.of(context).pop();
+  }
+
+  void _openInviteSheet() {
+    Navigator.of(context).pop();
+    InviteSheet.show(
+      context,
+      service: widget.inviteService,
+    );
   }
 
   @override
@@ -96,7 +105,7 @@ class _AddContactSheetState extends State<AddContactSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Handle bar
+            // Handle
             Center(
               child: Container(
                 width: 40,
@@ -171,72 +180,13 @@ class _AddContactSheetState extends State<AddContactSheet> {
             ),
             const SizedBox(height: 16),
 
-            // No results — show invite option
-            if (_message != null && _results.isEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5F7FA),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: const Color(0xFF6C63FF).withOpacity(0.2)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.person_search_outlined,
-                            size: 16, color: Colors.grey),
-                        const SizedBox(width: 6),
-                        Text('No account found',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey[700])),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'This person isn\'t on BuilderVet yet. Invite them via SMS.',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey[500]),
-                    ),
-                    const SizedBox(height: 12),
-                    GestureDetector(
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        InviteSheet.show(
-                          context,
-                          service: widget.inviteService,
-                        );
-                      },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6C63FF),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.sms_outlined,
-                                color: Colors.white, size: 16),
-                            SizedBox(width: 8),
-                            Text('Invite via SMS',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+            // Error
+            if (_error != null)
+              Center(
+                child: Text(_error!,
+                    style: TextStyle(
+                        color: Colors.grey[500], fontSize: 13)),
               ),
-            ],
 
             // Search results
             ..._results.map((user) => Container(
@@ -269,7 +219,8 @@ class _AddContactSheetState extends State<AddContactSheet> {
                                     color: Color(0xFF1A1A2E))),
                             Text(user.email,
                                 style: TextStyle(
-                                    fontSize: 12, color: Colors.grey[500])),
+                                    fontSize: 12,
+                                    color: Colors.grey[500])),
                           ],
                         ),
                       ),
@@ -292,6 +243,68 @@ class _AddContactSheetState extends State<AddContactSheet> {
                     ],
                   ),
                 )),
+
+            // No results — invite prompt
+            if (_searched && _results.isEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F7FA),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: const Color(0xFF6C63FF).withOpacity(0.2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.person_search_outlined,
+                            size: 16, color: Colors.grey),
+                        const SizedBox(width: 6),
+                        Text('No account found',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey[700])),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'This person isn\'t on BuilderVet yet. Send them an invite link.',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    ),
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: _openInviteSheet,
+                      child: Container(
+                        width: double.infinity,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF6C63FF),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.link_rounded,
+                                color: Colors.white, size: 16),
+                            SizedBox(width: 8),
+                            Text('Invite via Link',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 8),
           ],
