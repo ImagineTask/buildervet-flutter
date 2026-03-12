@@ -46,8 +46,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   bool _isLoadingMore = false;
   bool _hasMore = true;
 
-  final TranslationService _translationService =
-      TranslationService(apiKey: 'AIzaSyCLFlPZU-JhUlxkKiaYM8W0ju4IPrUQxqU');
+  final TranslationService _translationService = TranslationService(
+    apiKey: const String.fromEnvironment('Google_Cloud_Translate_API_KEY'),
+  );
   final ImagePickerService _imagePickerService = ImagePickerService();
 
   String get _currentUserId => FirebaseAuth.instance.currentUser?.uid ?? 'me';
