@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../models/participant.dart';
 import '../../../models/enums/participant_role.dart';
 import '../../../core/di/service_locator.dart';
+import '../../../core/widgets/user_avatar.dart';
 
 class PeopleListSection extends ConsumerWidget {
   const PeopleListSection({super.key});
@@ -87,9 +87,10 @@ class _PersonCard extends ConsumerWidget {
         vertical: AppSpacing.xs,
       ),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: AppColors.primary.withOpacity(0.1),
-          child: Icon(person.role.icon, color: AppColors.primary, size: 20),
+        leading: UserAvatar(
+          radius: 20,
+          avatarUrl: person.avatarUrl,
+          initials: person.initials,
         ),
         title: Text(person.name),
         subtitle: Text(person.role.label),

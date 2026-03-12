@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../providers/auth_provider.dart';
 import 'sections/search_section.dart';
 import 'sections/project_task_section.dart';
+import '../../core/widgets/user_avatar.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -35,17 +37,12 @@ class HomeScreen extends ConsumerWidget {
                 onTap: () => _showProfileSheet(context, ref),
                 child: Container(
                   margin: const EdgeInsets.only(right: AppSpacing.md),
-                  child: CircleAvatar(
+                  child: UserAvatar(
                     radius: 16,
+                    avatarUrl: appUser.valueOrNull?.avatarUrl,
+                    initials: initials,
                     backgroundColor: AppColors.primary,
-                    child: Text(
-                      initials,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
+                    textColor: Colors.white,
                   ),
                 ),
               ),
@@ -98,17 +95,10 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: AppSpacing.lg),
-              CircleAvatar(
+              UserAvatar(
                 radius: 36,
-                backgroundColor: AppColors.primary.withOpacity(0.1),
-                child: Text(
-                  appUser?.initials ?? '?',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
+                avatarUrl: appUser?.avatarUrl,
+                initials: appUser?.initials ?? '?',
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
@@ -141,6 +131,16 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
               const SizedBox(height: AppSpacing.lg),
+              ListTile(
+                leading: const Icon(Icons.settings_outlined),
+                title: const Text('Settings'),
+                trailing: const Icon(Icons.chevron_right, size: 20),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.push('/settings');
+                },
+              ),
+              const SizedBox(height: AppSpacing.md),
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(

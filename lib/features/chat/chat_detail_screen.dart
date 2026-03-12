@@ -13,8 +13,10 @@ import '../../core/services/image_picker_service.dart';
 import '../../core/services/translation_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
+import '../../core/widgets/user_avatar.dart';
 import '../../models/enums/message_type.dart';
 import '../../models/message.dart';
+import '../../providers/auth_provider.dart';
 import '../../shared/widgets/images/full_screen_image_viewer.dart';
 
 class ChatDetailScreen extends ConsumerStatefulWidget {
@@ -38,9 +40,14 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   bool _isUploading = false;
   String? _recipientCountry;
   String _recipientLanguage = 'en';
+  int _messageLimit = 10;
+  String? _recipientAvatarUrl;
+  String? _recipientInitials;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
 
   final TranslationService _translationService =
-      TranslationService(apiKey: 'your_api_key');
+      TranslationService(apiKey: 'AIzaSyCLFlPZU-JhUlxkKiaYM8W0ju4IPrUQxqU');
   final ImagePickerService _imagePickerService = ImagePickerService();
 
   String get _currentUserId => FirebaseAuth.instance.currentUser?.uid ?? 'me';
@@ -52,6 +59,34 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     super.initState();
     _fetchRecipientInfo();
     _markAsRead();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _loadMoreMessages(int currentCount) {
+    if (!_hasMore || _isLoadingMore) return;
+
+    // If we have fewer messages than the limit, we've reached the end
+    if (currentCount < _messageLimit) {
+      setState(() => _hasMore = false);
+      return;
+    }
+
+    setState(() {
+      _isLoadingMore = true;
+      _messageLimit += 10;
+    });
+
+    // Reset loading state after a small delay to allow stream to update
+    Future.delayed(const Duration(milliseconds: 1000), () {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    });
   }
 
   Future<void> _markAsRead() async {
@@ -80,6 +115,13 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               _recipientCountry = recipient.country;
               _recipientLanguage =
                   TranslationService.getLanguageForCountry(_recipientCountry);
+              _recipientAvatarUrl = recipient.avatarUrl;
+              final names = recipient.name.split(' ');
+              if (names.length >= 2) {
+                _recipientInitials = (names[0][0] + names[1][0]).toUpperCase();
+              } else {
+                _recipientInitials = recipient.name.isNotEmpty ? recipient.name[0].toUpperCase() : '?';
+              }
             });
             debugPrint(
                 'Recipient country: $_recipientCountry, target language: $_recipientLanguage');
@@ -109,7 +151,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       setState(() => _isUploading = true);
       try {
         print('ChatDetail: Starting upload for $imageUrl by user ${user.uid}');
-        final storageService = ref.read(storageServiceProvider);
+        final storageService = ref.read(storageLocatorProvider);
         Uint8List bytes;
         String fileName;
 
@@ -131,7 +173,11 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           bytes = await file.readAsBytes();
         }
 
-        finalImageUrl = await storageService.uploadImage(bytes, fileName);
+        finalImageUrl = await storageService.uploadFile(
+          bytes: bytes,
+          path: 'chat_images/$fileName',
+          contentType: 'image/jpeg',
+        );
         print('ChatDetail: Upload successful: $finalImageUrl');
       } catch (e, stack) {
         String errorMessage = e.toString();
@@ -153,6 +199,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
     final String content = text ?? '';
     String? translatedContent;
+    String? sourceLanguage;
+    String? targetLanguage;
 
     if (content.isNotEmpty) {
       setState(() => _isTranslating = true);
@@ -161,6 +209,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         final result =
             await _translationService.translate(content, _recipientLanguage);
         translatedContent = result.translatedText;
+        sourceLanguage = result.sourceLanguage;
+        targetLanguage = result.targetLanguage;
       } catch (e) {
         debugPrint('Translation error: $e');
       }
@@ -175,13 +225,16 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       type: finalImageUrl != null ? MessageType.image : MessageType.text,
       content: content,
       translatedContent: translatedContent,
+      sourceLanguage: sourceLanguage,
+      targetLanguage: targetLanguage,
       sentAt: DateTime.now(),
       imageUrl: finalImageUrl,
     );
 
     await ref.read(chatRepositoryProvider).sendMessage(newMessage);
     _controller.clear();
-    _scrollToBottom();
+    // With reverse: true, 0 is the bottom.
+    _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
   }
 
   Future<void> _pickImage() async {
@@ -192,31 +245,20 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     }
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    final appUser = ref.watch(appUserProvider).valueOrNull;
+    final userLanguage = TranslationService.getLanguageForCountry(appUser?.country);
+
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: Row(
           children: [
-            CircleAvatar(
+            UserAvatar(
               radius: 18,
-              backgroundColor: AppColors.primary.withOpacity(0.1),
-              child: Text(widget.title[0],
-                  style:
-                      const TextStyle(fontSize: 14, color: AppColors.primary)),
+              avatarUrl: _recipientAvatarUrl,
+              initials: _recipientInitials ?? widget.title[0].toUpperCase(),
             ),
             const SizedBox(width: AppSpacing.sm),
             Text(widget.title, style: const TextStyle(fontSize: 16)),
@@ -232,36 +274,55 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             child: StreamBuilder<List<Message>>(
               stream: ref
                   .watch(chatRepositoryProvider)
-                  .getMessages(widget.conversationId),
+                  .getMessages(widget.conversationId, limit: _messageLimit > 0 ? _messageLimit : 10),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                final messages = snapshot.data ?? [];
+
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    messages.isEmpty) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
-                }
-                final messages = snapshot.data ?? [];
                 if (messages.isEmpty) {
                   return const Center(
                       child: Text('No messages yet',
                           style: TextStyle(color: AppColors.textTertiary)));
                 }
 
-                _scrollToBottom();
-
-                return ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    final isMe = message.senderId == _currentUserId;
-                    return _MessageBubble(
-                      message: message,
-                      isMe: isMe,
-                      translationService: _translationService,
-                    );
+                return NotificationListener<ScrollNotification>(
+                  onNotification: (ScrollNotification scrollInfo) {
+                    if (scrollInfo.metrics.pixels >=
+                            scrollInfo.metrics.maxScrollExtent - 200 &&
+                        !_isLoadingMore) {
+                      _loadMoreMessages(messages.length);
+                    }
+                    return true;
                   },
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    itemCount: messages.length + (_isLoadingMore ? 1 : 0),
+                    reverse: true,
+                    itemBuilder: (context, index) {
+                      if (index == messages.length) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
+                          child: Center(
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        );
+                      }
+                      
+                      final message = messages[index];
+                      final isMe = message.senderId == _currentUserId;
+                      return _MessageBubble(
+                        key: ValueKey(message.id),
+                        message: message,
+                        isMe: isMe,
+                        translationService: _translationService,
+                        targetLanguage: userLanguage,
+                      );
+                    },
+                  ),
                 );
               },
             ),
@@ -334,11 +395,14 @@ class _MessageBubble extends StatefulWidget {
   final Message message;
   final bool isMe;
   final TranslationService translationService;
+  final String targetLanguage;
 
   const _MessageBubble({
+    super.key,
     required this.message,
     required this.isMe,
     required this.translationService,
+    required this.targetLanguage,
   });
 
   @override
@@ -353,6 +417,20 @@ class _MessageBubbleState extends State<_MessageBubble> {
   bool _hasCheckedLanguage = false;
 
   @override
+  void didUpdateWidget(_MessageBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.message.id != widget.message.id ||
+        oldWidget.message.content != widget.message.content) {
+      _translatedText = widget.message.translatedContent;
+      _showTranslation = false;
+      _isLoadingTranslation = false;
+      _isSameLanguage = false;
+      _hasCheckedLanguage = false;
+      _checkLanguage();
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     _translatedText = widget.message.translatedContent;
@@ -362,8 +440,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
   Future<void> _checkLanguage() async {
     if (widget.isMe || widget.message.content.isEmpty) return;
 
-    // Assume current user's language is English ('en') for this demo
-    const currentUserLang = 'en';
+    final currentUserLang = widget.targetLanguage;
 
     try {
       final detectedLang = await widget.translationService
@@ -372,9 +449,11 @@ class _MessageBubbleState extends State<_MessageBubble> {
         setState(() {
           _isSameLanguage = detectedLang == currentUserLang;
           _hasCheckedLanguage = true;
-          // If we already have a translation and languages differ, show it
-          if (_translatedText != null && !_isSameLanguage) {
-            _showTranslation = false;
+          
+          // Bidirectional Logic:
+          // 1. If I'm the recipient and languages differ, auto-show translation
+          if (!widget.isMe && !_isSameLanguage && _translatedText != null) {
+            _showTranslation = true;
           }
         });
       }
@@ -391,8 +470,19 @@ class _MessageBubbleState extends State<_MessageBubble> {
 
     setState(() => _isLoadingTranslation = true);
     try {
+      // If we are the sender, we might want to see what we sent to the recipient
+      // If the message already has a translation, just toggle it
+      if (widget.isMe && widget.message.translatedContent != null) {
+        setState(() {
+          _translatedText = widget.message.translatedContent;
+          _showTranslation = !_showTranslation;
+          _isLoadingTranslation = false;
+        });
+        return;
+      }
+
       final result = await widget.translationService
-          .translate(widget.message.content, 'en');
+          .translate(widget.message.content, widget.targetLanguage);
       if (mounted) {
         setState(() {
           _translatedText = result.translatedText;
@@ -414,10 +504,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
   @override
   Widget build(BuildContext context) {
     // Determine if we should even show the translation button
-    final bool canTranslate = !widget.isMe &&
+    final bool canTranslate = 
         widget.message.content.isNotEmpty &&
         _hasCheckedLanguage &&
-        !_isSameLanguage;
+        (!_isSameLanguage || (widget.isMe && widget.message.translatedContent != null));
     return Align(
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -469,6 +559,10 @@ class _MessageBubbleState extends State<_MessageBubble> {
                                 : Image.network(
                                     widget.message.imageUrl!,
                                     fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    height: 200,
+                                    // Optimize: don't load full quality for preview
+                                    cacheWidth: 400, 
                                     loadingBuilder: (context, child, loadingProgress) {
                                       if (loadingProgress == null) return child;
                                       return Container(
@@ -533,7 +627,7 @@ class _MessageBubbleState extends State<_MessageBubble> {
                       : Text(
                           _showTranslation
                               ? 'Hide translation'
-                              : 'See translation',
+                              : (widget.isMe ? 'See sent translation' : 'See translation'),
                           style: const TextStyle(
                               fontSize: 12,
                               color: AppColors.primary,

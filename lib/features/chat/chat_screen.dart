@@ -9,6 +9,7 @@ import '../../shared/widgets/inputs/app_search_bar.dart';
 import '../../models/message.dart';
 import '../../models/enums/message_type.dart';
 import '../../core/di/service_locator.dart';
+import '../../core/widgets/user_avatar.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -142,17 +143,9 @@ class _ConversationTile extends StatelessWidget {
         horizontal: AppSpacing.md,
         vertical: AppSpacing.xs,
       ),
-      leading: CircleAvatar(
+      leading: UserAvatar(
         radius: 24,
-        backgroundColor: AppColors.primary.withOpacity(0.1),
-        child: Text(
-          conversation.title.isNotEmpty ? conversation.title[0] : '?',
-          style: const TextStyle(
-            color: AppColors.primary,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
-          ),
-        ),
+        initials: conversation.title.isNotEmpty ? conversation.title[0].toUpperCase() : '?',
       ),
       title: Row(
         children: [

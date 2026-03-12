@@ -9,6 +9,8 @@ class Message {
   final MessageType type;
   final String content;
   final String? translatedContent;
+  final String? sourceLanguage;
+  final String? targetLanguage;
   final DateTime sentAt;
   final bool isRead;
   final String? imageUrl;
@@ -22,6 +24,8 @@ class Message {
     required this.type,
     required this.content,
     this.translatedContent,
+    this.sourceLanguage,
+    this.targetLanguage,
     required this.sentAt,
     this.isRead = false,
     this.imageUrl,
@@ -44,6 +48,8 @@ class Message {
       ),
       content: data['content'] ?? '',
       translatedContent: data['translatedContent'],
+      sourceLanguage: data['sourceLanguage'],
+      targetLanguage: data['targetLanguage'],
       sentAt: data['sentAt'] is Timestamp 
           ? (data['sentAt'] as Timestamp).toDate() 
           : DateTime.tryParse(data['sentAt']?.toString() ?? '') ?? DateTime.now(),
@@ -61,6 +67,8 @@ class Message {
       'type': type.name,
       'content': content,
       'translatedContent': translatedContent,
+      'sourceLanguage': sourceLanguage,
+      'targetLanguage': targetLanguage,
       'sentAt': Timestamp.fromDate(sentAt),
       'isRead': isRead,
       'imageUrl': imageUrl,

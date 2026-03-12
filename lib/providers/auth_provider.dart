@@ -1,6 +1,8 @@
+import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../core/services/storage_service.dart';
 import '../models/app_user.dart';
 
 /// Firebase Auth instance
@@ -80,6 +82,68 @@ class AuthService {
   /// Sign out
   Future<void> signOut() async {
     await _auth.signOut();
+  }
+
+  /// Update user's country
+  Future<void> updateCountry(String uid, String countryCode) async {
+    await _db.collection('users').doc(uid).update({
+      'country': countryCode,
+    });
+  }
+
+  /// Update user's profile information
+  Future<void> updateProfile({
+    required String uid,
+    String? name,
+    String? phone,
+  }) async {
+    final Map<String, dynamic> updates = {};
+    if (name != null) {
+      updates['name'] = name;
+      await _auth.currentUser?.updateDisplayName(name);
+    }
+    if (phone != null) updates['phone'] = phone;
+
+    if (updates.isNotEmpty) {
+      await _db.collection('users').doc(uid).update(updates);
+    }
+  }
+
+  /// Update user's password
+  Future<void> updatePassword(String newPassword) async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      await user.updatePassword(newPassword);
+    } else {
+      throw Exception('No user is currently signed in');
+    }
+  }
+
+  /// Update user's avatar
+  Future<String> updateAvatar({
+    required String uid,
+    required Uint8List bytes,
+    required String fileName,
+    required StorageService storageService,
+  }) async {
+    final path = '$uid/$fileName';
+    
+    // Upload bytes
+    final url = await storageService.uploadFile(
+      bytes: bytes,
+      path: path,
+      contentType: 'image/jpeg',
+    );
+    
+    // Update Firestore
+    await _db.collection('users').doc(uid).update({
+      'avatarUrl': url,
+    });
+    
+    // Update Firebase Auth profile
+    await _auth.currentUser?.updatePhotoURL(url);
+    
+    return url;
   }
 }
 

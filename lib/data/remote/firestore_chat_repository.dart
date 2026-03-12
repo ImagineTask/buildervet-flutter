@@ -34,12 +34,15 @@ class FirestoreChatRepository {
     });
   }
 
-  Stream<List<Message>> getMessages(String conversationId) {
+  Stream<List<Message>> getMessages(String conversationId, {int limit = 20}) {
+    // Ensure limit is always positive
+    final safeLimit = limit > 0 ? limit : 1;
     return _firestore
         .collection('conversations')
         .doc(conversationId)
         .collection('messages')
-        .orderBy('sentAt', descending: false)
+        .orderBy('sentAt', descending: true)
+        .limit(safeLimit)
         .snapshots()
         .map((snapshot) =>
             snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());

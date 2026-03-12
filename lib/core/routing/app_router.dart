@@ -19,6 +19,7 @@ import '../../features/actions/screens/task_schedule_screen.dart';
 import '../../features/actions/screens/task_invoice_screen.dart';
 import '../../features/actions/screens/project_photo_screen.dart';
 import '../../features/actions/screens/web_view_screen.dart';
+import '../../features/settings/settings_screen.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authStateProvider);
@@ -105,6 +106,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             title: extra['title'] as String? ?? 'Chat',
           );
         },
+      ),
+
+      // ─── Settings screen ────────────────────────────────
+      GoRoute(
+        path: '/settings',
+        name: RouteNames.settings,
+        builder: (context, state) => const SettingsScreen(),
       ),
 
       // ─── Task detail screen ─────────────────────────────

@@ -14,4 +14,5 @@ class RouteNames {
   static const String seeAllTasks = 'seeAllTasks';
   static const String conversation = 'conversation';
   static const String personDetail = 'personDetail';
+  static const String settings = 'settings';
 }

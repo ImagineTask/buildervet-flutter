@@ -1,27 +1,23 @@
-import 'dart:io';
 import 'dart:typed_data';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'storage_service.dart';
 
-class FirebaseStorageService {
+class FirebaseStorageService implements StorageService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Future<String> uploadImage(Uint8List bytes, String fileName) async {
+  @override
+  Future<String> uploadFile({
+    required Uint8List bytes,
+    required String path,
+    String? contentType,
+  }) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('User must be authenticated to upload images');
-      }
+      print('FirebaseStorage: Starting upload to $path (${bytes.length} bytes)');
+      final ref = _storage.ref().child(path);
 
-      print('FirebaseStorage: Starting upload for $fileName (${bytes.length} bytes) by user ${user.uid}');
-      final ref = _storage.ref().child('chat_images/$fileName');
-
-      
       // Adding metadata helps with mime types and browser behavior
       final metadata = SettableMetadata(
-        contentType: 'image/jpeg',
-        customMetadata: {'picked-file-path': fileName},
+        contentType: contentType ?? 'image/jpeg',
       );
 
       final uploadTask = ref.putData(bytes, metadata);
@@ -39,25 +35,17 @@ class FirebaseStorageService {
       print('FirebaseStorage: Got URL: $url');
       return url;
     } catch (e) {
-      print('FirebaseStorage: Error in uploadImage: $e');
+      print('FirebaseStorage: Error in uploadFile: $e');
       rethrow;
     }
   }
 
-  Future<String> uploadFile(File file, String fileName) async {
+  @override
+  Future<void> deleteFile(String path) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        throw Exception('User must be authenticated to upload files');
-      }
-      print('FirebaseStorage: Starting file upload for $fileName by user ${user.uid}');
-      final ref = _storage.ref().child('chat_files/$fileName');
-
-      final uploadTask = ref.putFile(file);
-      final snapshot = await uploadTask;
-      return await snapshot.ref.getDownloadURL();
+      await _storage.ref().child(path).delete();
     } catch (e) {
-      print('FirebaseStorage: Error in uploadFile: $e');
+      print('FirebaseStorage: Error in deleteFile: $e');
       rethrow;
     }
   }

@@ -9,6 +9,14 @@ class Participant {
   final String? phone;
   final String? country;
 
+  String get initials {
+    final parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.isNotEmpty ? name[0].toUpperCase() : '?';
+  }
+
   const Participant({
     required this.userId,
     required this.name,

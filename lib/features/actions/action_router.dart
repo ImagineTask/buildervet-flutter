@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../models/task.dart';
 import 'action_registry.dart';
-import 'screens/project_task_list_screen.dart';
 
 /// Routes action tile taps to the correct destination.
 /// Handles system actions (from registry) and custom user actions.
