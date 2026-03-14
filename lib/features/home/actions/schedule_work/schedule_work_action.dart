@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../models/task_model.dart';
 import '../base_action_tile.dart';
+import 'schedule_work_page.dart';
 
 class ScheduleWorkAction extends BaseActionTile {
   const ScheduleWorkAction({super.key, required super.project});
@@ -16,6 +16,11 @@ class ScheduleWorkAction extends BaseActionTile {
 
   @override
   void onTap(BuildContext context) {
-    // TODO: Open scheduler / calendar
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ScheduleWorkPage(project: project),
+      ),
+    );
   }
 }

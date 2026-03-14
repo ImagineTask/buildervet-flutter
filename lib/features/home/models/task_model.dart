@@ -1,15 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// A single model for ALL documents in the "tasks" collection.
-/// taskType determines whether it's a project or a sub-task.
 class TaskModel {
   final String id;
   final String taskId;
   final String taskName;
   final String description;
-  final String taskType;       // "project" | "task"
-  final String status;         // "draft" | "active" | "done" | etc.
-  final String? parentTaskId;  // null if it's a project; set if it's a task
+  final String taskType;
+  final String status;
+  final String? parentTaskId;
   final String? contractorType;
   final DateTime startTime;
   final DateTime endTime;
@@ -19,6 +17,7 @@ class TaskModel {
   final double guidePriceMax;
   final List<String> actionSpace;
   final List<String> participantIds;
+  final List<String> assignedBuilderIds;
   final String ownerId;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -41,6 +40,7 @@ class TaskModel {
     required this.guidePriceMax,
     required this.actionSpace,
     required this.participantIds,
+    required this.assignedBuilderIds,
     required this.ownerId,
     required this.createdAt,
     required this.updatedAt,
@@ -49,6 +49,54 @@ class TaskModel {
 
   bool get isProject => taskType == 'project';
   bool get isTask => taskType == 'task';
+
+  TaskModel copyWith({
+    String? id,
+    String? taskId,
+    String? taskName,
+    String? description,
+    String? taskType,
+    String? status,
+    String? parentTaskId,
+    String? contractorType,
+    DateTime? startTime,
+    DateTime? endTime,
+    int? durationDays,
+    double? guidePrice,
+    double? guidePriceMin,
+    double? guidePriceMax,
+    List<String>? actionSpace,
+    List<String>? participantIds,
+    List<String>? assignedBuilderIds,
+    String? ownerId,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Map<String, dynamic>? metadata,
+  }) {
+    return TaskModel(
+      id: id ?? this.id,
+      taskId: taskId ?? this.taskId,
+      taskName: taskName ?? this.taskName,
+      description: description ?? this.description,
+      taskType: taskType ?? this.taskType,
+      status: status ?? this.status,
+      parentTaskId: parentTaskId ?? this.parentTaskId,
+      contractorType: contractorType ?? this.contractorType,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      durationDays: durationDays ?? this.durationDays,
+      guidePrice: guidePrice ?? this.guidePrice,
+      guidePriceMin: guidePriceMin ?? this.guidePriceMin,
+      guidePriceMax: guidePriceMax ?? this.guidePriceMax,
+      actionSpace: actionSpace ?? this.actionSpace,
+      participantIds: participantIds ?? this.participantIds,
+      assignedBuilderIds: assignedBuilderIds ?? this.assignedBuilderIds,
+      ownerId: ownerId ?? this.ownerId,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      metadata: metadata ?? this.metadata,
+    );
+  }
 
   factory TaskModel.fromFirestore(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
@@ -69,6 +117,8 @@ class TaskModel {
       guidePriceMax: (d['guidePriceMax'] ?? 0).toDouble(),
       actionSpace: List<String>.from(d['actionSpace'] ?? []),
       participantIds: List<String>.from(d['participantIds'] ?? []),
+      assignedBuilderIds:
+          List<String>.from(d['assignedBuilderIds'] ?? []),
       ownerId: d['ownerId'] ?? '',
       createdAt: _parseDate(d['createdAt']),
       updatedAt: _parseDate(d['updatedAt']),

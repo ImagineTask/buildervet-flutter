@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import '../models/task_model.dart';
 import 'base_action_tile.dart';
 import 'view_tasks/view_tasks_action.dart';
@@ -11,12 +10,10 @@ import 'create_invoice/create_invoice_action.dart';
 import 'request_quote/request_quote_action.dart';
 import 'view_details/view_details_action.dart';
 import 'add_note/add_note_action.dart';
+import 'accept_task/accept_task_action.dart';
+import 'deny_task/deny_task_action.dart';
+import 'negotiate_task/negotiate_task_action.dart';
 
-/// Maps an action string (from Firestore actionSpace) to its tile widget.
-/// To add a new action:
-///   1. Create a new subfolder under widgets/actions/
-///   2. Create your action class extending BaseActionTile
-///   3. Register it here with its action string key
 class ActionRegistry {
   ActionRegistry._();
 
@@ -42,13 +39,17 @@ class ActionRegistry {
         return ViewDetailsAction(project: project);
       case 'add_note':
         return AddNoteAction(project: project);
+      case 'accept_task':
+        return AcceptTaskAction(project: project);
+      case 'deny_task':
+        return DenyTaskAction(project: project);
+      case 'negotiate_task':
+        return NegotiateTaskAction(project: project);
       default:
-        // Unknown action — returns null, caller can skip or show fallback
         return null;
     }
   }
 
-  /// Resolves all actions for a project, skipping unknown ones.
   static List<BaseActionTile> resolveAll(TaskModel project) {
     return project.actionSpace
         .map((action) => resolve(action, project))

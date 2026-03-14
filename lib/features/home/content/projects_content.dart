@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../models/task_model.dart';
 import '../services/tasks_service.dart';
 import '../../Cards/Task/task_project_type_card.dart';
