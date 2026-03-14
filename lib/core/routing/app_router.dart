@@ -7,8 +7,8 @@ import '../../features/ai/ai_request_screen.dart';
 import '../../features/home/home_screen.dart';
 import '../../features/network/network_screen.dart';
 import '../../features/calendar/calendar_screen.dart';
-import '../../features/chat/chat_screen.dart';
-import '../../features/chat/chat_detail_screen.dart';
+import '../../features/chat/screens/chat_list_screen.dart';
+import '../../features/chat/screens/chat_detail_screen.dart';
 import '../../features/alerts/alerts_screen.dart';
 import '../../providers/auth_provider.dart';
 import '../../features/detail_screens/task_detail_screen.dart';
@@ -83,7 +83,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/chat',
             name: RouteNames.chat,
             pageBuilder: (context, state) => const NoTransitionPage(
-              child: ChatScreen(),
+              child: ChatListScreen(),
             ),
           ),
           GoRoute(

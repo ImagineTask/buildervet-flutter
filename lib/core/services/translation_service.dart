@@ -11,6 +11,8 @@ class TranslationService {
 
   TranslationService({required this.apiKey});
 
+  final Map<String, TranslationResult> _cache = {};
+
   /// Translates text to the target language.
   /// Returns the translated text, or the original text if translation fails.
   /// Also returns the detected source language if available.
@@ -24,13 +26,15 @@ class TranslationService {
     }
 
     final languageCode = targetLanguage.split('-').first.toLowerCase();
+    final cacheKey = '${languageCode}_$text';
+
+    if (_cache.containsKey(cacheKey)) {
+      Log.i('Translation Cache Hit: key="$cacheKey"');
+      return _cache[cacheKey]!;
+    }
 
     try {
-      // Optimise: Detection might have already happened in context, 
-      // or if we had sourceLanguage passed we could skip.
-      // For now, we proceed to Google API which handles matching natively 
-      // but we ensure parameters are clean.
-
+      Log.i('Translation Request: text="$text", target="$languageCode"');
       final response = await http.post(
         Uri.parse('$_baseUrl?key=$apiKey'),
         body: json.encode({
@@ -41,6 +45,8 @@ class TranslationService {
         headers: {'Content-Type': 'application/json'},
       );
 
+      Log.i('Translation Response: status=${response.statusCode}, body=${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final translations = data['data']['translations'] as List;
@@ -49,12 +55,17 @@ class TranslationService {
           final detectedSourceLanguage =
               translations[0]['detectedSourceLanguage'] as String? ?? 'unknown';
 
-          return TranslationResult(
+          Log.i('Translation Result: translated="$translatedText", detected="$detectedSourceLanguage"');
+
+          final result = TranslationResult(
             translatedText: translatedText,
             sourceLanguage: detectedSourceLanguage,
             targetLanguage: languageCode,
             isSameLanguage: detectedSourceLanguage == languageCode,
           );
+          
+          _cache[cacheKey] = result;
+          return result;
         }
       }
       return TranslationResult(
@@ -75,17 +86,22 @@ class TranslationService {
     if (text.isEmpty) return 'unknown';
 
     try {
+      Log.i('Detection Request: text="$text"');
       final response = await http.post(
         Uri.parse('$_baseUrl/detect?key=$apiKey'),
         body: json.encode({'q': text}),
         headers: {'Content-Type': 'application/json'},
       );
 
+      Log.i('Detection Response: status=${response.statusCode}, body=${response.body}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final detections = data['data']['detections'] as List;
         if (detections.isNotEmpty && (detections[0] as List).isNotEmpty) {
-          return detections[0][0]['language'] as String;
+          final language = detections[0][0]['language'] as String;
+          Log.i('Detection Result: language="$language"');
+          return language;
         }
       }
       return 'unknown';

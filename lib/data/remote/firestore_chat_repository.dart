@@ -35,18 +35,49 @@ class FirestoreChatRepository {
     });
   }
 
-  Stream<List<Message>> getMessages(String conversationId, {int limit = 20}) {
+  Stream<List<Message>> getMessages(String conversationId,
+      {int limit = 20, DocumentSnapshot? lastDocument}) {
     // Ensure limit is always positive
     final safeLimit = limit > 0 ? limit : 1;
-    return _firestore
+    Query query = _firestore
         .collection('conversations')
         .doc(conversationId)
         .collection('messages')
         .orderBy('sentAt', descending: true)
-        .limit(safeLimit)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
+        .limit(safeLimit);
+
+    if (lastDocument != null) {
+      query = query.startAfterDocument(lastDocument);
+    }
+
+    return query.snapshots().map((snapshot) =>
+        snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList());
+  }
+
+  /// Returns snapshots of messages along with the last document for pagination
+  Stream<MessagePaginationResult> getMessagesPaginated(String conversationId,
+      {int limit = 20, DocumentSnapshot? lastDocument}) {
+    final safeLimit = limit > 0 ? limit : 1;
+    Query query = _firestore
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .orderBy('sentAt', descending: true)
+        .limit(safeLimit);
+
+    if (lastDocument != null) {
+      query = query.startAfterDocument(lastDocument);
+    }
+
+    return query.snapshots().map((snapshot) {
+      final messages =
+          snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList();
+      return MessagePaginationResult(
+        messages: messages,
+        lastDocument: snapshot.docs.isNotEmpty ? snapshot.docs.last : null,
+        hasMore: snapshot.docs.length >= safeLimit,
+      );
+    });
   }
 
   Future<void> sendMessage(Message message) async {
@@ -151,4 +182,42 @@ class FirestoreChatRepository {
     }
     return null;
   }
+  Stream<Map<String, bool>> getTypingStatus(String conversationId) {
+    return _firestore
+        .collection('conversations')
+        .doc(conversationId)
+        .snapshots()
+        .map((snapshot) {
+      if (!snapshot.exists) return {};
+      final data = snapshot.data() as Map<String, dynamic>;
+      final typing = data['typing'] as Map<String, dynamic>? ?? {};
+      return typing.map((key, value) => MapEntry(key, value as bool));
+    });
+  }
+
+  Future<void> setTypingStatus(
+      String conversationId, String userId, bool isTyping) async {
+    try {
+      await _firestore.collection('conversations').doc(conversationId).update({
+        'typing.$userId': isTyping,
+      });
+    } catch (e) {
+      // If document doesn't have 'typing' field yet, we might need to use SetOptions
+      await _firestore.collection('conversations').doc(conversationId).set({
+        'typing': {userId: isTyping}
+      }, SetOptions(merge: true));
+    }
+  }
+}
+
+class MessagePaginationResult {
+  final List<Message> messages;
+  final DocumentSnapshot? lastDocument;
+  final bool hasMore;
+
+  MessagePaginationResult({
+    required this.messages,
+    this.lastDocument,
+    required this.hasMore,
+  });
 }

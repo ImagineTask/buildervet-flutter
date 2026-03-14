@@ -6,6 +6,7 @@ import '../../data/remote/firestore_chat_repository.dart';
 import '../../providers/storage_provider.dart';
 import '../services/storage_service.dart';
 import '../services/file_service.dart';
+import '../services/translation_service.dart';
 
 /// Task repository — reads/writes directly to Firestore
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
@@ -25,3 +26,8 @@ final fileLocatorProvider = Provider<FileService>((ref) {
 });
 
 final httpProvider = Provider((ref) => http.Client());
+
+final translationServiceProvider = Provider<TranslationService>((ref) {
+  const apiKey = String.fromEnvironment('GOOGLE_CLOUD_TRANSLATE_API_KEY');
+  return TranslationService(apiKey: apiKey);
+});

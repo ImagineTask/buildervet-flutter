@@ -2,7 +2,8 @@ enum MessageType {
   text,
   image,
   invite,
-  file;
+  file,
+  emoji;
 
   String get label {
     switch (this) {
@@ -14,6 +15,8 @@ enum MessageType {
         return 'Invite';
       case MessageType.file:
         return 'File';
+      case MessageType.emoji:
+        return 'Emoji';
     }
   }
 

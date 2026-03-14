@@ -3,22 +3,22 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_spacing.dart';
-import '../../shared/widgets/inputs/app_search_bar.dart';
-import '../../models/message.dart';
-import '../../models/enums/message_type.dart';
-import '../../core/di/service_locator.dart';
-import '../../core/widgets/user_avatar.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_spacing.dart';
+import '../../../shared/widgets/inputs/app_search_bar.dart';
+import '../../../models/message.dart';
+import '../../../models/enums/message_type.dart';
+import '../../../core/di/service_locator.dart';
+import '../../../core/widgets/user_avatar.dart';
 
-class ChatScreen extends ConsumerStatefulWidget {
-  const ChatScreen({super.key});
+class ChatListScreen extends ConsumerStatefulWidget {
+  const ChatListScreen({super.key});
 
   @override
-  ConsumerState<ChatScreen> createState() => _ChatScreenState();
+  ConsumerState<ChatListScreen> createState() => _ChatListScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen> {
+class _ChatListScreenState extends ConsumerState<ChatListScreen> {
   String _searchQuery = '';
   String get _currentUserId => FirebaseAuth.instance.currentUser?.uid ?? '';
 
@@ -111,7 +111,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 }
 
-// Mocking data removed
 
 class _ConversationTile extends StatelessWidget {
   final Conversation conversation;
@@ -138,76 +137,78 @@ class _ConversationTile extends StatelessWidget {
     final String lastMsgText = lastMessage?.type == MessageType.image
         ? 'Sent an image'
         : (lastMessage?.content ?? 'No messages');
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.md,
-        vertical: AppSpacing.xs,
-      ),
-      leading: UserAvatar(
-        radius: 24,
-        initials: conversation.title.isNotEmpty ? conversation.title[0].toUpperCase() : '?',
-      ),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              conversation.title,
-              style: TextStyle(
-                fontWeight: unreadCount > 0
-                    ? FontWeight.bold
-                    : FontWeight.normal,
-              ),
-            ),
-          ),
-          Text(
-            _formatTime(lastMessage?.sentAt),
-            style: TextStyle(
-              fontSize: 12,
-              color: unreadCount > 0
-                  ? AppColors.primary
-                  : AppColors.textTertiary,
-            ),
-          ),
-        ],
-      ),
-      subtitle: Row(
-        children: [
-          Expanded(
-            child: Text(
-              lastMsgText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: unreadCount > 0
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          if (unreadCount > 0)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                borderRadius: BorderRadius.circular(10),
-              ),
+    return RepaintBoundary(
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.md,
+          vertical: AppSpacing.xs,
+        ),
+        leading: UserAvatar(
+          radius: 24,
+          initials: conversation.title.isNotEmpty ? conversation.title[0].toUpperCase() : '?',
+        ),
+        title: Row(
+          children: [
+            Expanded(
               child: Text(
-                '$unreadCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
+                conversation.title,
+                style: TextStyle(
+                  fontWeight: unreadCount > 0
+                      ? FontWeight.bold
+                      : FontWeight.normal,
                 ),
               ),
             ),
-        ],
+            Text(
+              _formatTime(lastMessage?.sentAt),
+              style: TextStyle(
+                fontSize: 12,
+                color: unreadCount > 0
+                    ? AppColors.primary
+                    : AppColors.textTertiary,
+              ),
+            ),
+          ],
+        ),
+        subtitle: Row(
+          children: [
+            Expanded(
+              child: Text(
+                lastMsgText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: unreadCount > 0
+                      ? AppColors.textPrimary
+                      : AppColors.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            if (unreadCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$unreadCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        onTap: () {
+          context.push('/chat/${conversation.id}', extra: {
+            'title': conversation.title,
+          });
+        },
       ),
-      onTap: () {
-        context.push('/chat/${conversation.id}', extra: {
-          'title': conversation.title,
-        });
-      },
     );
   }
 }
