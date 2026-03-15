@@ -1,19 +1,23 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../../core/services/logger_service.dart';
-import '../../../core/services/translation_service.dart';
+import 'package:flutter/services.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_spacing.dart';
+import '../../../core/services/translation_service.dart';
 import '../../../models/enums/message_type.dart';
 import '../../../models/message.dart';
-import '../../../shared/widgets/images/full_screen_image_viewer.dart';
+import 'components/text_content.dart';
+import 'components/image_content.dart';
+import 'components/video_content.dart';
+import 'components/audio_content.dart';
+import 'components/file_content.dart';
+import '../../../core/widgets/user_avatar.dart';
 
-class MessageBubble extends StatefulWidget {
+class MessageBubble extends StatelessWidget {
   final Message message;
   final bool isMe;
   final TranslationService translationService;
   final String targetLanguage;
+  final VoidCallback? onReply;
+  final Function(String messageId)? onJumpToMessage;
 
   const MessageBubble({
     super.key,
@@ -21,234 +25,216 @@ class MessageBubble extends StatefulWidget {
     required this.isMe,
     required this.translationService,
     required this.targetLanguage,
+    this.onReply,
+    this.onJumpToMessage,
   });
 
   @override
-  State<MessageBubble> createState() => _MessageBubbleState();
-}
-
-class _MessageBubbleState extends State<MessageBubble> {
-  String? _translatedText;
-  bool _showTranslation = false;
-  bool _isLoadingTranslation = false;
-
-  @override
-  void didUpdateWidget(MessageBubble oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.message.id != widget.message.id ||
-        oldWidget.message.content != widget.message.content) {
-      _translatedText = widget.message.translatedContent;
-      _showTranslation = false;
-      _isLoadingTranslation = false;
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _translatedText = widget.message.translatedContent;
-    if (_translatedText != null && !widget.isMe) {
-      _showTranslation = true;
-    }
-  }
-
-  Future<void> _translate() async {
-    if (_translatedText != null) {
-      setState(() => _showTranslation = !_showTranslation);
-      return;
-    }
-
-    setState(() => _isLoadingTranslation = true);
-    try {
-      if (widget.isMe && widget.message.translatedContent != null) {
-        setState(() {
-          _translatedText = widget.message.translatedContent;
-          _showTranslation = !_showTranslation;
-          _isLoadingTranslation = false;
-        });
-        return;
-      }
-
-      final result = await widget.translationService
-          .translate(widget.message.content, widget.targetLanguage);
-      if (mounted) {
-        setState(() {
-          _translatedText = result.translatedText;
-          _showTranslation = true;
-          _isLoadingTranslation = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Translation failed: $e')),
-        );
-        setState(() => _isLoadingTranslation = false);
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final bool canTranslate = widget.message.content.isNotEmpty &&
-        (!widget.isMe || widget.message.translatedContent != null);
+    const double avatarSize = 40.0;
+    
     return RepaintBoundary(
-      child: Align(
-        alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: AppSpacing.md),
-          constraints:
-              BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-          child: Column(
-            crossAxisAlignment:
-                widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: widget.isMe ? AppColors.primary : AppColors.surfaceLight,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(16),
-                    topRight: const Radius.circular(16),
-                    bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
-                    bottomRight: Radius.circular(widget.isMe ? 4 : 16),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (widget.message.type == MessageType.image &&
-                        widget.message.imageUrl != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: GestureDetector(
-                            onTap: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => FullScreenImageViewer(
-                                    imageUrl: widget.message.imageUrl!,
-                                    title: widget.message.senderName,
-                                  ),
-                                ),
-                              );
-                            },
-                            child: Hero(
-                              tag: widget.message.imageUrl!,
-                              child: widget.message.imageUrl!
-                                          .startsWith('blob:') ||
-                                      !widget.message.imageUrl!.startsWith('http')
-                                  ? (kIsWeb
-                                      ? Image.network(widget.message.imageUrl!)
-                                      : Image.file(
-                                          File(widget.message.imageUrl!)))
-                                  : Image.network(
-                                      widget.message.imageUrl!,
-                                      fit: BoxFit.cover,
-                                      width: double.infinity,
-                                      height: 200,
-                                      cacheWidth: 400,
-                                      filterQuality: FilterQuality.low,
-                                      loadingBuilder:
-                                          (context, child, loadingProgress) {
-                                        if (loadingProgress == null) return child;
-                                        return Container(
-                                          height: 200,
-                                          width: double.infinity,
-                                          color: AppColors.surfaceLight,
-                                          child: const Center(
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2),
-                                          ),
-                                        );
-                                      },
-                                      errorBuilder: (context, error, stackTrace) {
-                                        Log.e('Image Load Error: $error', error,
-                                            stackTrace);
-                                        return Container(
-                                          height: 200,
-                                          width: double.infinity,
-                                          color: AppColors.surfaceLight,
-                                          child: const Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(Icons.broken_image,
-                                                  color: AppColors.error,
-                                                  size: 40),
-                                              SizedBox(height: 8),
-                                              Text(
-                                                'Failed to load image',
-                                                style: TextStyle(
-                                                  color: AppColors.textTertiary,
-                                                  fontSize: 12,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        );
-                                      },
-                                    ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (widget.message.content.isNotEmpty)
-                      Text(
-                        widget.message.content,
-                        style: TextStyle(
-                          color:
-                              widget.isMe ? Colors.white : AppColors.textPrimary,
-                          fontSize: 15,
-                        ),
-                      ),
-                  ],
-                ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 12.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            if (!isMe) ...[
+              UserAvatar(
+                radius: avatarSize / 2,
+                initials: (message.senderName.isNotEmpty) ? message.senderName[0].toUpperCase() : '?',
               ),
-              if (canTranslate)
-                GestureDetector(
-                  onTap: _translate,
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 4, left: 4),
-                    child: _isLoadingTranslation
-                        ? const SizedBox(
-                            height: 12,
-                            width: 12,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : Text(
-                            _showTranslation
-                                ? 'Hide translation'
-                                : (widget.isMe
-                                    ? 'See sent translation'
-                                    : 'See translation'),
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w500),
-                          ),
-                  ),
-                ),
-              if (canTranslate && _showTranslation && _translatedText != null)
-                Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.info.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    _translatedText!,
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                        color: AppColors.textPrimary),
-                  ),
-                ),
+              const SizedBox(width: 8),
             ],
-          ),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onLongPress: () => _showContextMenu(context),
+                    child: Container(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.75,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isMe ? AppColors.primary : AppColors.surfaceLight,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(isMe ? 12 : 2),
+                          topRight: Radius.circular(isMe ? 2 : 12),
+                          bottomLeft: const Radius.circular(12),
+                          bottomRight: const Radius.circular(12),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 2,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (message.replyToId != null) _buildReplyQuote(),
+                          _buildContent(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isMe) ...[
+              const SizedBox(width: 8),
+              UserAvatar(
+                radius: avatarSize / 2,
+                initials: (message.senderName.isNotEmpty) ? message.senderName[0].toUpperCase() : '?',
+              ),
+            ],
+          ],
         ),
       ),
     );
+  }
+
+  Widget _buildReplyQuote() {
+    return GestureDetector(
+      onTap: () {
+        if (message.replyToId != null) {
+          onJumpToMessage?.call(message.replyToId!);
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: isMe ? Colors.white.withOpacity(0.12) : Colors.black.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(4),
+          border: Border(
+            left: BorderSide(
+              color: isMe ? Colors.white.withOpacity(0.5) : AppColors.primary.withOpacity(0.6),
+              width: 2,
+            ),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    message.replyToSenderName ?? 'Unknown',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: isMe ? Colors.white.withOpacity(0.9) : AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    message.replyToContent ?? (message.replyToType != null ? '[${message.replyToType}]' : '[Media]'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: isMe ? Colors.white.withOpacity(0.7) : AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (message.replyToImageUrl != null)
+              Container(
+                margin: const EdgeInsets.only(left: 6),
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(2),
+                  image: DecorationImage(
+                    image: NetworkImage(message.replyToImageUrl!),
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showContextMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply),
+              title: const Text('Reply'),
+              onTap: () {
+                Navigator.pop(context);
+                onReply?.call();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy),
+              title: const Text('Copy'),
+              onTap: () async {
+                Navigator.pop(context);
+                final textToCopy = message.content;
+                if (textToCopy.isNotEmpty) {
+                  await Clipboard.setData(ClipboardData(text: textToCopy));
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Copied to clipboard'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    switch (message.type) {
+      case MessageType.text:
+        return TextContent(
+          message: message,
+          isMe: isMe,
+          translationService: translationService,
+          targetLanguage: targetLanguage,
+        );
+      case MessageType.image:
+        return ImageContent(message: message);
+      case MessageType.video:
+        return VideoContent(message: message);
+      case MessageType.audio:
+      case MessageType.voice:
+        return AudioContent(message: message, isMe: isMe);
+      case MessageType.file:
+      case MessageType.document:
+        return FileContent(message: message, isMe: isMe);
+      default:
+        return TextContent(
+          message: message,
+          isMe: isMe,
+          translationService: translationService,
+          targetLanguage: targetLanguage,
+        );
+    }
   }
 }

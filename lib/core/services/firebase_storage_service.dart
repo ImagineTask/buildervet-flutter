@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:mime/mime.dart';
 import 'storage_service.dart';
 import 'logger_service.dart';
 
@@ -16,9 +17,11 @@ class FirebaseStorageService implements StorageService {
       Log.i('FirebaseStorage: Starting upload to $path (${bytes.length} bytes)');
       final ref = _storage.ref().child(path);
 
-      // Adding metadata helps with mime types and browser behavior
+      // Lookup mime type if not provided
+      final String? detectedType = contentType ?? lookupMimeType(path, headerBytes: bytes);
+      
       final metadata = SettableMetadata(
-        contentType: contentType ?? 'image/jpeg',
+        contentType: detectedType ?? 'application/octet-stream',
       );
 
       final uploadTask = ref.putData(bytes, metadata);

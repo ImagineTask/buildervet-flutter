@@ -14,7 +14,18 @@ class Message {
   final DateTime sentAt;
   final bool isRead;
   final String? imageUrl;
+  final String? fileUrl;
+  final String? fileName;
+  final int? fileSize;
+  final int? duration;
+  final String? mimeType;
   final String? taskId;
+  final Map<String, String>? transcriptions;
+  final String? replyToId;
+  final String? replyToContent;
+  final String? replyToSenderName;
+  final String? replyToImageUrl;
+  final String? replyToType;
 
   const Message({
     required this.id,
@@ -29,7 +40,18 @@ class Message {
     required this.sentAt,
     this.isRead = false,
     this.imageUrl,
+    this.fileUrl,
+    this.fileName,
+    this.fileSize,
+    this.duration,
+    this.mimeType,
     this.taskId,
+    this.transcriptions,
+    this.replyToId,
+    this.replyToContent,
+    this.replyToSenderName,
+    this.replyToImageUrl,
+    this.replyToType,
   });
 
   factory Message.fromFirestore(DocumentSnapshot doc) {
@@ -37,6 +59,16 @@ class Message {
   }
 
   factory Message.fromMap(Map<String, dynamic> data, String id) {
+    // Backward compatibility: handle old 'transcription' field
+    Map<String, String>? transcriptions;
+    if (data['transcriptions'] != null) {
+      transcriptions = Map<String, String>.from(data['transcriptions']);
+    } else if (data['transcription'] != null) {
+      // If old single field exists, we don't know who it was for, 
+      // but we'll assume it's a global one for now.
+      transcriptions = {'legacy': data['transcription'] as String};
+    }
+
     return Message(
       id: id,
       conversationId: data['conversationId'] ?? '',
@@ -55,7 +87,18 @@ class Message {
           : DateTime.tryParse(data['sentAt']?.toString() ?? '') ?? DateTime.now(),
       isRead: data['isRead'] ?? false,
       imageUrl: data['imageUrl'],
+      fileUrl: data['fileUrl'],
+      fileName: data['fileName'],
+      fileSize: data['fileSize'],
+      duration: data['duration'],
+      mimeType: data['mimeType'],
       taskId: data['taskId'],
+      transcriptions: transcriptions,
+      replyToId: data['replyToId'],
+      replyToContent: data['replyToContent'],
+      replyToSenderName: data['replyToSenderName'],
+      replyToImageUrl: data['replyToImageUrl'],
+      replyToType: data['replyToType'],
     );
   }
 
@@ -72,7 +115,18 @@ class Message {
       'sentAt': Timestamp.fromDate(sentAt),
       'isRead': isRead,
       'imageUrl': imageUrl,
+      'fileUrl': fileUrl,
+      'fileName': fileName,
+      'fileSize': fileSize,
+      'duration': duration,
+      'mimeType': mimeType,
       'taskId': taskId,
+      'transcriptions': transcriptions,
+      'replyToId': replyToId,
+      'replyToContent': replyToContent,
+      'replyToSenderName': replyToSenderName,
+      'replyToImageUrl': replyToImageUrl,
+      'replyToType': replyToType,
     };
   }
 }

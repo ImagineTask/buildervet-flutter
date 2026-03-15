@@ -31,9 +31,17 @@ dependencies:
   image_picker: ^1.2.1
   pro_image_editor: ^12.0.6
   http: ^1.6.0
+  cached_network_image: ^3.3.1
   file_picker: ^10.3.10
   logger: ^2.6.2
   emoji_picker_flutter: ^4.4.0
+  record: ^5.1.0
+  audioplayers: ^6.0.0
+  video_player: ^2.8.2
+  chewie: ^1.7.5
+  open_file_plus: ^3.4.1
+  mime: ^1.0.4
+  url_launcher: ^6.2.5
 
 dev_dependencies:
   flutter_test:

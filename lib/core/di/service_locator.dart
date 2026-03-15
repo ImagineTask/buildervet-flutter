@@ -7,6 +7,8 @@ import '../../providers/storage_provider.dart';
 import '../services/storage_service.dart';
 import '../services/file_service.dart';
 import '../services/translation_service.dart';
+import '../services/audio_recorder_service.dart';
+import '../services/stt_service.dart';
 
 /// Task repository — reads/writes directly to Firestore
 final taskRepositoryProvider = Provider<TaskRepository>((ref) {
@@ -30,4 +32,13 @@ final httpProvider = Provider((ref) => http.Client());
 final translationServiceProvider = Provider<TranslationService>((ref) {
   const apiKey = String.fromEnvironment('GOOGLE_CLOUD_TRANSLATE_API_KEY');
   return TranslationService(apiKey: apiKey);
+});
+
+final audioRecorderServiceProvider = Provider<AudioRecorderService>((ref) {
+  return AudioRecorderService();
+});
+
+final sttServiceProvider = Provider<SttService>((ref) {
+  const apiKey = String.fromEnvironment('GOOGLE_CLOUD_TRANSLATE_API_KEY');
+  return SttService(apiKey: apiKey);
 });

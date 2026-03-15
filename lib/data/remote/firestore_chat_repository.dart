@@ -195,6 +195,21 @@ class FirestoreChatRepository {
     });
   }
 
+  Future<void> updateMessageTranscription(
+      String conversationId, String messageId, String userId, String transcription) async {
+    try {
+      await _firestore
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .doc(messageId)
+          .update({'transcriptions.$userId': transcription});
+    } catch (e, stack) {
+      Log.e('Error updating transcription: $e', e, stack);
+      rethrow;
+    }
+  }
+
   Future<void> setTypingStatus(
       String conversationId, String userId, bool isTyping) async {
     try {

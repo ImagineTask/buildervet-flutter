@@ -25,6 +25,14 @@ class TranslationService {
           targetLanguage: targetLanguage);
     }
 
+    if (apiKey.isEmpty || apiKey == 'null') {
+      Log.e('Translation Error: Google Cloud API Key is missing or invalid.');
+      return TranslationResult(
+          translatedText: text,
+          sourceLanguage: 'unknown',
+          targetLanguage: targetLanguage);
+    }
+
     final languageCode = targetLanguage.split('-').first.toLowerCase();
     final cacheKey = '${languageCode}_$text';
 
