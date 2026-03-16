@@ -13,6 +13,8 @@ import 'add_note/add_note_action.dart';
 import 'accept_task/accept_task_action.dart';
 import 'deny_task/deny_task_action.dart';
 import 'negotiate_task/negotiate_task_action.dart';
+import 'marketing/marketing_action.dart';
+import 'customised/customised_action.dart';
 
 class ActionRegistry {
   ActionRegistry._();
@@ -45,6 +47,10 @@ class ActionRegistry {
         return DenyTaskAction(project: project);
       case 'negotiate_task':
         return NegotiateTaskAction(project: project);
+      case 'marketing':
+        return MarketingAction(project: project);
+      case 'customised':
+        return CustomisedAction(project: project);
       default:
         return null;
     }

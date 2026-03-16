@@ -3,6 +3,11 @@ import '../models/task_model.dart';
 import '../services/tasks_service.dart';
 import '../../Cards/Task/task_project_type_card.dart';
 import '../actions/action_registry.dart';
+import '../actions/marketing/marketing_action.dart';
+import '../actions/customised/customised_action.dart';
+import '../actions/customised/custom_tile_service.dart';
+import '../actions/customised/custom_tile_model.dart';
+import '../actions/customised/custom_tile_widget.dart';
 import '../state/project_selection_state.dart';
 
 class ProjectsContent extends StatefulWidget {
@@ -18,7 +23,6 @@ class _ProjectsContentState extends State<ProjectsContent> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Re-subscribe whenever dependencies change
     _selection = ProjectSelectionState.of(context);
     _selection.removeListener(_onSelectionChanged);
     _selection.addListener(_onSelectionChanged);
@@ -31,11 +35,9 @@ class _ProjectsContentState extends State<ProjectsContent> {
   }
 
   void _onSelectionChanged() {
-    // Triggers an immediate rebuild when selection changes
     if (mounted) setState(() {});
   }
 
-  // ── Tap card in list → confirm selection ─────────────────────────────────
   Future<void> _onCardTapped(TaskModel project) async {
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
@@ -47,23 +49,21 @@ class _ProjectsContentState extends State<ProjectsContent> {
     }
   }
 
-  // ── Tap selected card → confirm deselection ───────────────────────────────
   Future<void> _onSelectedCardTapped() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Deselect Project?',
-            style:
-                TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E))),
-        content: const Text(
-            'This will return you to the project list.',
+            style: TextStyle(
+                fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E))),
+        content: const Text('This will return you to the project list.',
             style: TextStyle(color: Colors.grey)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.grey)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
@@ -196,85 +196,107 @@ class _SelectedProjectView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final actions = ActionRegistry.resolveAll(project);
+    final customTileService = CustomTileService();
+    final systemActions = [
+      ...ActionRegistry.resolveAll(project),
+      MarketingAction(project: project),
+    ];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // "Selected Project" pill
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: const Color(0xFF6C63FF).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.check_circle_rounded,
-                  size: 12, color: Color(0xFF6C63FF)),
-              SizedBox(width: 4),
-              Text(
-                'Selected Project',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF6C63FF),
+    return StreamBuilder<List<CustomTileModel>>(
+      stream: customTileService.streamTiles(project.id),
+      builder: (context, snapshot) {
+        final customTiles = snapshot.data ?? [];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Selected Project pill
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF6C63FF).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_circle_rounded,
+                      size: 12, color: Color(0xFF6C63FF)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Selected Project',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6C63FF),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            GestureDetector(
+              onTap: onCardTapped,
+              child: TaskProjectTypeCard(
+                  project: project, service: service, showViewTasks: false),
+            ),
+            const SizedBox(height: 20),
+
+            // Action grid
+            const Text(
+              'Actions',
+              style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A2E)),
+            ),
+            const SizedBox(height: 12),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 1,
+              children: [
+                // System actions (from Firestore actionSpace)
+                ...systemActions,
+
+                // Custom tiles directly in grid
+                ...customTiles.map((tile) => CustomTileWidget(
+                      tile: tile,
+                      projectId: project.id,
+                      service: customTileService,
+                    )),
+
+                // Always last: + Customise tile
+                CustomisedAction(project: project),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            // Switch project button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: onSwitch,
+                icon: const Icon(Icons.swap_horiz_rounded,
+                    size: 16, color: Color(0xFF6C63FF)),
+                label: const Text('Switch Project',
+                    style: TextStyle(color: Color(0xFF6C63FF))),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  side: const BorderSide(color: Color(0xFF6C63FF)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-
-        // Tap card to trigger deselect dialog
-        GestureDetector(
-          onTap: onCardTapped,
-          child: TaskProjectTypeCard(
-              project: project, service: service, showViewTasks: false),
-        ),
-        const SizedBox(height: 20),
-
-        // Action grid
-        if (actions.isNotEmpty) ...[
-          const Text(
-            'Actions',
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E)),
-          ),
-          const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 1,
-            children: actions,
-          ),
-          const SizedBox(height: 20),
-        ],
-
-        // Switch project button
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: onSwitch,
-            icon: const Icon(Icons.swap_horiz_rounded,
-                size: 16, color: Color(0xFF6C63FF)),
-            label: const Text('Switch Project',
-                style: TextStyle(color: Color(0xFF6C63FF))),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              side: const BorderSide(color: Color(0xFF6C63FF)),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
