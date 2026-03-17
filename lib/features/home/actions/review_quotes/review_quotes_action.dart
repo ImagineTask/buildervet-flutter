@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../base_action_tile.dart';
+import 'quote_management_page.dart';
 
 class ReviewQuotesAction extends BaseActionTile {
   const ReviewQuotesAction({super.key, required super.project});
@@ -15,6 +16,14 @@ class ReviewQuotesAction extends BaseActionTile {
 
   @override
   void onTap(BuildContext context) {
-    // TODO: Navigate to quotes screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => QuoteManagementPage(
+          projectId: project.taskId,
+          projectName: project.taskName,
+        ),
+      ),
+    );
   }
 }

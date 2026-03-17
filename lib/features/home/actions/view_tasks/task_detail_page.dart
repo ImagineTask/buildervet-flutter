@@ -4,9 +4,12 @@ import 'package:intl/intl.dart';
 import '../../models/task_model.dart';
 import '../schedule_work/task_schedule_detail_page.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TaskDetailPage
+// ─────────────────────────────────────────────────────────────────────────────
+
 class TaskDetailPage extends StatefulWidget {
   final TaskModel task;
-
   const TaskDetailPage({super.key, required this.task});
 
   @override
@@ -15,50 +18,42 @@ class TaskDetailPage extends StatefulWidget {
 
 class _TaskDetailPageState extends State<TaskDetailPage>
     with TickerProviderStateMixin {
+  // ── Controllers ─────────────────────────────────────────────────────────
   late TextEditingController _priceController;
+  late TextEditingController _descriptionController;
+  late TextEditingController _durationController;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  bool _isSavingPrice = false;
-  bool _priceEdited = false;
+  // ── State ────────────────────────────────────────────────────────────────
+  bool _editMode = false;
+  bool _isSaving = false;
+  DateTime? _editStartDate;
+  DateTime? _editEndDate;
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
+  // ── Computed helpers ─────────────────────────────────────────────────────
 
   Color get _statusColor {
     switch (widget.task.status) {
-      case 'draft':
-        return const Color(0xFF9E9E9E);
-      case 'pending_acceptance':
-        return const Color(0xFFFFB347);
-      case 'active':
-        return const Color(0xFF6C63FF);
-      case 'negotiating':
-        return const Color(0xFF4ECDC4);
-      case 'done':
-        return const Color(0xFF43C59E);
-      case 'denied':
-        return const Color(0xFFFF6B6B);
-      default:
-        return Colors.grey;
+      case 'draft':              return const Color(0xFF9E9E9E);
+      case 'pending_acceptance': return const Color(0xFFFFB347);
+      case 'active':             return const Color(0xFF6C63FF);
+      case 'negotiating':        return const Color(0xFF4ECDC4);
+      case 'done':               return const Color(0xFF43C59E);
+      case 'denied':             return const Color(0xFFFF6B6B);
+      default:                   return Colors.grey;
     }
   }
 
   String get _statusLabel {
     switch (widget.task.status) {
-      case 'draft':
-        return 'Draft';
-      case 'pending_acceptance':
-        return 'Awaiting Acceptance';
-      case 'active':
-        return 'Active';
-      case 'negotiating':
-        return 'Negotiating';
-      case 'done':
-        return 'Done';
-      case 'denied':
-        return 'Denied';
-      default:
-        return widget.task.status;
+      case 'draft':              return 'Draft';
+      case 'pending_acceptance': return 'Awaiting Acceptance';
+      case 'active':             return 'Active';
+      case 'negotiating':        return 'Negotiating';
+      case 'done':               return 'Done';
+      case 'denied':             return 'Denied';
+      default:                   return widget.task.status;
     }
   }
 
@@ -72,24 +67,25 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   List<String> get _actionSpace =>
       List<String>.from(widget.task.metadata['actionSpace'] ?? []);
 
+  // ── Format helpers ───────────────────────────────────────────────────────
+
   String _formatDate(String? iso) {
     if (iso == null) return '—';
     try {
-      final dt = DateTime.parse(iso).toLocal();
-      return DateFormat('EEE d MMM yyyy').format(dt);
-    } catch (_) {
-      return '—';
-    }
+      return DateFormat('EEE d MMM yyyy').format(DateTime.parse(iso).toLocal());
+    } catch (_) { return '—'; }
+  }
+
+  String _formatDateFromDT(DateTime? dt) {
+    if (dt == null) return '—';
+    return DateFormat('EEE d MMM yyyy').format(dt);
   }
 
   String _formatDateTime(String? iso) {
     if (iso == null) return '—';
     try {
-      final dt = DateTime.parse(iso).toLocal();
-      return DateFormat('d MMM yyyy · HH:mm').format(dt);
-    } catch (_) {
-      return '—';
-    }
+      return DateFormat('d MMM yyyy · HH:mm').format(DateTime.parse(iso).toLocal());
+    } catch (_) { return '—'; }
   }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -99,81 +95,148 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     super.initState();
     _priceController = TextEditingController(
         text: widget.task.guidePrice.toStringAsFixed(0));
+    _descriptionController =
+        TextEditingController(text: widget.task.description);
+    _durationController = TextEditingController(
+        text: (widget.task.metadata['durationDays'] ?? '').toString());
+
+    final rawStart = widget.task.metadata['startTime'] as String?;
+    final rawEnd   = widget.task.metadata['endTime']   as String?;
+    if (rawStart != null) _editStartDate = DateTime.tryParse(rawStart)?.toLocal();
+    if (rawEnd   != null) _editEndDate   = DateTime.tryParse(rawEnd)?.toLocal();
 
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 400));
     _fadeAnimation =
         CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
     _fadeController.forward();
-
-    _priceController.addListener(() {
-      final newVal = double.tryParse(_priceController.text);
-      setState(() {
-        _priceEdited = newVal != null && newVal != widget.task.guidePrice;
-      });
-    });
   }
 
   @override
   void dispose() {
     _priceController.dispose();
+    _descriptionController.dispose();
+    _durationController.dispose();
     _fadeController.dispose();
     super.dispose();
   }
 
-  // ── Save price ───────────────────────────────────────────────────────────
+  // ── Edit mode ────────────────────────────────────────────────────────────
 
-  Future<void> _savePrice() async {
+  void _enterEditMode() => setState(() => _editMode = true);
+
+  void _cancelEdit() {
+    _priceController.text = widget.task.guidePrice.toStringAsFixed(0);
+    _descriptionController.text = widget.task.description;
+    _durationController.text =
+        (widget.task.metadata['durationDays'] ?? '').toString();
+    final rawStart = widget.task.metadata['startTime'] as String?;
+    final rawEnd   = widget.task.metadata['endTime']   as String?;
+    _editStartDate =
+        rawStart != null ? DateTime.tryParse(rawStart)?.toLocal() : null;
+    _editEndDate =
+        rawEnd   != null ? DateTime.tryParse(rawEnd)?.toLocal()   : null;
+    setState(() => _editMode = false);
+  }
+
+  // ── Save ─────────────────────────────────────────────────────────────────
+
+  Future<void> _saveChanges() async {
     final fee = double.tryParse(_priceController.text);
-    if (fee == null) return;
-
-    setState(() => _isSavingPrice = true);
+    if (fee == null) { _showSnack('Enter a valid price', isError: true); return; }
+    setState(() => _isSaving = true);
     try {
+      final updates = <String, dynamic>{
+        'guidePrice':  fee,
+        'description': _descriptionController.text.trim(),
+        'updatedAt':   FieldValue.serverTimestamp(),
+      };
+      final duration = int.tryParse(_durationController.text);
+      if (duration != null) updates['metadata.durationDays'] = duration;
+      if (_editStartDate != null)
+        updates['metadata.startTime'] = _editStartDate!.toUtc().toIso8601String();
+      if (_editEndDate != null)
+        updates['metadata.endTime'] = _editEndDate!.toUtc().toIso8601String();
+
       await FirebaseFirestore.instance
           .collection('tasks')
           .doc(widget.task.id)
-          .update({
-        'guidePrice': fee,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+          .update(updates);
 
       if (mounted) {
-        setState(() {
-          _priceEdited = false;
-          _isSavingPrice = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle_outline,
-                    color: Colors.white, size: 18),
-                SizedBox(width: 8),
-                Text('Price updated successfully'),
-              ],
-            ),
-            backgroundColor: const Color(0xFF43C59E),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        setState(() { _editMode = false; _isSaving = false; });
+        _showSnack('Changes saved');
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isSavingPrice = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Failed to update price. Try again.'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        setState(() => _isSaving = false);
+        _showSnack('Failed to save. Try again.', isError: true);
       }
     }
   }
+
+  void _showSnack(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        Icon(isError ? Icons.error_outline : Icons.check_circle_outline,
+            color: Colors.white, size: 18),
+        const SizedBox(width: 8),
+        Text(msg),
+      ]),
+      backgroundColor: isError ? Colors.red : const Color(0xFF43C59E),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  // ── Date picker ──────────────────────────────────────────────────────────
+
+  Future<void> _pickDate(BuildContext context, {required bool isStart}) async {
+    final initial = isStart
+        ? (_editStartDate ?? DateTime.now())
+        : (_editEndDate   ?? DateTime.now());
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: Color(0xFF6C63FF),
+            onPrimary: Colors.white,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() {
+      if (isStart) _editStartDate = picked;
+      else         _editEndDate   = picked;
+    });
+  }
+
+  // ── Input decoration ─────────────────────────────────────────────────────
+
+  InputDecoration _inputDeco(String hint) => InputDecoration(
+    hintText: hint,
+    hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    filled: true,
+    fillColor: const Color(0xFFF9F9FF),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.grey.shade200),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.grey.shade200),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 2),
+    ),
+  );
 
   // ── Build ────────────────────────────────────────────────────────────────
 
@@ -185,23 +248,19 @@ class _TaskDetailPageState extends State<TaskDetailPage>
         opacity: _fadeAnimation,
         child: CustomScrollView(
           slivers: [
-            _buildAppBar(context),
+            _buildAppBar(),
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
                   const SizedBox(height: 16),
                   _buildStatusBanner(),
                   const SizedBox(height: 16),
-                  if (widget.task.description.isNotEmpty) ...[
-                    _buildDescriptionSection(),
-                    const SizedBox(height: 16),
-                  ],
-                  _buildTimelineSection(),
+                  _buildDescriptionSection(),
                   const SizedBox(height: 16),
                   _buildPriceSection(),
                   const SizedBox(height: 16),
-                  _buildScheduleSection(),
+                  _buildScheduleAndTimelineSection(),
                   if (_hasNegotiation) ...[
                     const SizedBox(height: 16),
                     _buildNegotiationSection(),
@@ -219,12 +278,14 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           ],
         ),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _buildFab(),
     );
   }
 
   // ── App Bar ──────────────────────────────────────────────────────────────
 
-  SliverAppBar _buildAppBar(BuildContext context) {
+  SliverAppBar _buildAppBar() {
     return SliverAppBar(
       expandedHeight: 110,
       floating: false,
@@ -245,6 +306,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
         ),
         onPressed: () => Navigator.pop(context),
       ),
+      actions: const [],
       flexibleSpace: FlexibleSpaceBar(
         titlePadding: const EdgeInsets.fromLTRB(56, 0, 16, 16),
         title: Column(
@@ -254,21 +316,148 @@ class _TaskDetailPageState extends State<TaskDetailPage>
             Text(
               widget.task.taskName,
               style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E),
-              ),
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1A1A2E)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             if (widget.task.contractorType != null)
-              Text(
-                widget.task.contractorType!,
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-              ),
+              Text(widget.task.contractorType!,
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500])),
           ],
         ),
       ),
+    );
+  }
+
+  // ── FAB ──────────────────────────────────────────────────────────────────
+
+  Widget _buildFab() {
+    if (_editMode) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: SizedBox(
+          height: 56,
+          child: Row(
+            children: [
+            // Cancel
+            Expanded(
+              flex: 2,
+              child: GestureDetector(
+                onTap: _cancelEdit,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: const Color(0xFFFF6B6B).withOpacity(0.4)),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text('Cancel',
+                        style: TextStyle(
+                            color: Color(0xFFFF6B6B),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15)),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Save & Lock
+            Expanded(
+              flex: 3,
+              child: GestureDetector(
+                onTap: _isSaving ? null : _saveChanges,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6C63FF), Color(0xFF5A52E8)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                          color: const Color(0xFF6C63FF).withOpacity(0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: Center(
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.lock_outline_rounded,
+                                  color: Colors.white, size: 16),
+                              SizedBox(width: 8),
+                              Text('Save & Lock',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15)),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    }
+
+    // View mode — Edit button
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        height: 56,
+        child: GestureDetector(
+        onTap: _enterEditMode,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF6C63FF).withOpacity(0.3)),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4)),
+            ],
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6C63FF)),
+              SizedBox(width: 8),
+              Text('Edit',
+                  style: TextStyle(
+                      color: Color(0xFF6C63FF),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15)),
+            ],
+          ),
+        ),
+      ),
+    ),
     );
   }
 
@@ -300,14 +489,11 @@ class _TaskDetailPageState extends State<TaskDetailPage>
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            _statusLabel,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: _statusColor,
-            ),
-          ),
+          Text(_statusLabel,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _statusColor)),
           const Spacer(),
           if (taskOrder != null)
             Container(
@@ -318,13 +504,11 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.grey.shade200),
               ),
-              child: Text(
-                'Task #$taskOrder',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[500],
-                    fontWeight: FontWeight.w500),
-              ),
+              child: Text('Task #$taskOrder',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[500],
+                      fontWeight: FontWeight.w500)),
             ),
         ],
       ),
@@ -337,278 +521,48 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     return _SectionCard(
       title: 'Description',
       icon: Icons.notes_rounded,
-      child: Text(
-        widget.task.description,
-        style:
-            TextStyle(fontSize: 14, color: Colors.grey[600], height: 1.6),
-      ),
+      editMode: _editMode,
+      child: _editMode
+          ? TextField(
+              controller: _descriptionController,
+              maxLines: 4,
+              style:
+                  TextStyle(fontSize: 14, color: Colors.grey[700], height: 1.5),
+              decoration: _inputDeco('Describe the task...'),
+            )
+          : Text(
+              widget.task.description.isEmpty
+                  ? 'No description provided.'
+                  : widget.task.description,
+              style: TextStyle(
+                  fontSize: 14,
+                  color: widget.task.description.isEmpty
+                      ? Colors.grey[400]
+                      : Colors.grey[600],
+                  height: 1.6,
+                  fontStyle: widget.task.description.isEmpty
+                      ? FontStyle.italic
+                      : FontStyle.normal),
+            ),
     );
   }
 
-  // ── 3 · Timeline ─────────────────────────────────────────────────────────
+  // ── 3 · Schedule & Timeline (merged) ────────────────────────────────────
 
-  Widget _buildTimelineSection() {
-    final startTime = widget.task.metadata['startTime'] as String?;
-    final endTime = widget.task.metadata['endTime'] as String?;
+  Widget _buildScheduleAndTimelineSection() {
+    final startTime    = widget.task.metadata['startTime']    as String?;
+    final endTime      = widget.task.metadata['endTime']      as String?;
     final durationDays = widget.task.metadata['durationDays'];
 
-    return _SectionCard(
-      title: 'Timeline',
-      icon: Icons.schedule_rounded,
-      accentColor: const Color(0xFFFFB347),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _dateBox(
-                  label: 'Start',
-                  value: _formatDate(startTime),
-                  icon: Icons.play_circle_outline_rounded,
-                  color: const Color(0xFF43C59E),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _dateBox(
-                  label: 'End',
-                  value: _formatDate(endTime),
-                  icon: Icons.stop_circle_outlined,
-                  color: const Color(0xFFFF6B6B),
-                ),
-              ),
-            ],
-          ),
-          if (durationDays != null) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F5F5),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.timelapse_rounded,
-                      size: 15, color: Colors.grey[400]),
-                  const SizedBox(width: 8),
-                  Text('Duration',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey[500])),
-                  const Spacer(),
-                  Text(
-                    '$durationDays working day${durationDays > 1 ? 's' : ''}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A2E),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _dateBox({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 13, color: color),
-              const SizedBox(width: 4),
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 11, color: Colors.grey[500])),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1A2E),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── 4 · Price ────────────────────────────────────────────────────────────
-
-  Widget _buildPriceSection() {
-    return _SectionCard(
-      title: 'Price',
-      icon: Icons.currency_pound_rounded,
-      accentColor: const Color(0xFF6C63FF),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Guide Range',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey[500])),
-                Text(
-                  '£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A2E),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text('Agreed Price',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[600])),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _priceController,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A2E),
-                  ),
-                  decoration: InputDecoration(
-                    prefixText: '£',
-                    prefixStyle: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF6C63FF),
-                    ),
-                    hintText: '0',
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 14),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                          BorderSide(color: Colors.grey.shade200),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide:
-                          BorderSide(color: Colors.grey.shade200),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                          color: Color(0xFF6C63FF), width: 2),
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              AnimatedOpacity(
-                opacity: _priceEdited ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 200),
-                child: AnimatedScale(
-                  scale: _priceEdited ? 1.0 : 0.8,
-                  duration: const Duration(milliseconds: 200),
-                  child: GestureDetector(
-                    onTap: _priceEdited && !_isSavingPrice
-                        ? _savePrice
-                        : null,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 18, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF6C63FF),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF6C63FF)
-                                .withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: _isSavingPrice
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white),
-                            )
-                          : const Text('Save',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14)),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (_priceEdited)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'Tap Save to update the agreed price',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[400],
-                    fontStyle: FontStyle.italic),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ── 5 · Builder & Schedule ───────────────────────────────────────────────
-
-  Widget _buildScheduleSection() {
     return _SectionCard(
       title: 'Builder & Schedule',
       icon: Icons.groups_2_outlined,
       accentColor: const Color(0xFF43C59E),
+      editMode: _editMode,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Assigned builders ──────────────────────────────────────────
           if (widget.task.assignedBuilderIds.isNotEmpty) ...[
             ...widget.task.assignedBuilderIds.map((id) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -616,26 +570,23 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color:
-                          const Color(0xFF43C59E).withOpacity(0.06),
+                      color: const Color(0xFF43C59E).withOpacity(0.06),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: const Color(0xFF43C59E)
-                              .withOpacity(0.2)),
+                          color: const Color(0xFF43C59E).withOpacity(0.2)),
                     ),
                     child: Row(
                       children: [
                         CircleAvatar(
                           radius: 16,
-                          backgroundColor: const Color(0xFF43C59E)
-                              .withOpacity(0.15),
+                          backgroundColor:
+                              const Color(0xFF43C59E).withOpacity(0.15),
                           child: Text(
                             id.substring(0, 1).toUpperCase(),
                             style: const TextStyle(
-                              color: Color(0xFF43C59E),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
+                                color: Color(0xFF43C59E),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -651,7 +602,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                     ),
                   ),
                 )),
-            const SizedBox(height: 4),
           ] else
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
@@ -666,56 +616,317 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                 ],
               ),
             ),
-          const SizedBox(height: 4),
-          GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) =>
-                      TaskScheduleDetailPage(task: widget.task)),
-            ),
-            child: Container(
+
+          // ── Assign button ──────────────────────────────────────────────
+          if (_editMode)
+            GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) =>
+                        TaskScheduleDetailPage(task: widget.task)),
+              ),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF43C59E), Color(0xFF3AB58E)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                        color: const Color(0xFF43C59E).withOpacity(0.3),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4)),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.calendar_month_rounded,
+                        color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text('Assign Builder & Arrange Time',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14)),
+                    SizedBox(width: 6),
+                    Icon(Icons.arrow_forward_ios_rounded,
+                        color: Colors.white, size: 12),
+                  ],
+                ),
+              ),
+            )
+          else
+            Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF43C59E), Color(0xFF3AB58E)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF43C59E).withOpacity(0.3),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                border: Border.all(color: Colors.grey.shade200),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.calendar_month_rounded,
-                      color: Colors.white, size: 18),
-                  SizedBox(width: 8),
+                  Icon(Icons.lock_outline_rounded,
+                      size: 15, color: Colors.grey[400]),
+                  const SizedBox(width: 8),
                   Text('Assign Builder & Arrange Time',
                       style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
+                          color: Colors.grey[400],
+                          fontWeight: FontWeight.w500,
                           fontSize: 14)),
-                  SizedBox(width: 6),
-                  Icon(Icons.arrow_forward_ios_rounded,
-                      color: Colors.white, size: 12),
                 ],
               ),
             ),
+
+          // ── Divider ────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Divider(height: 1, color: Colors.grey.shade100),
           ),
+
+          // ── Dates ──────────────────────────────────────────────────────
+          Row(
+            children: [
+              Expanded(
+                child: _editMode
+                    ? _tappableDateBox(
+                        label: 'Start',
+                        value: _editStartDate != null
+                            ? _formatDateFromDT(_editStartDate)
+                            : _formatDate(startTime),
+                        icon: Icons.play_circle_outline_rounded,
+                        color: const Color(0xFF43C59E),
+                        onTap: () => _pickDate(context, isStart: true),
+                      )
+                    : _readDateBox(
+                        label: 'Start',
+                        value: _formatDate(startTime),
+                        icon: Icons.play_circle_outline_rounded,
+                        color: const Color(0xFF43C59E),
+                      ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _editMode
+                    ? _tappableDateBox(
+                        label: 'End',
+                        value: _editEndDate != null
+                            ? _formatDateFromDT(_editEndDate)
+                            : _formatDate(endTime),
+                        icon: Icons.stop_circle_outlined,
+                        color: const Color(0xFFFF6B6B),
+                        onTap: () => _pickDate(context, isStart: false),
+                      )
+                    : _readDateBox(
+                        label: 'End',
+                        value: _formatDate(endTime),
+                        icon: Icons.stop_circle_outlined,
+                        color: const Color(0xFFFF6B6B),
+                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // ── Duration ───────────────────────────────────────────────────
+          _editMode
+              ? TextField(
+                  controller: _durationController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(
+                      fontSize: 14, color: Color(0xFF1A1A2E)),
+                  decoration: _inputDeco('Number of working days').copyWith(
+                    prefixIcon: Icon(Icons.timelapse_rounded,
+                        size: 18, color: Colors.grey[400]),
+                    suffixText: 'days',
+                    suffixStyle:
+                        TextStyle(fontSize: 13, color: Colors.grey[400]),
+                  ),
+                )
+              : Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.timelapse_rounded,
+                          size: 15, color: Colors.grey[400]),
+                      const SizedBox(width: 8),
+                      Text('Duration',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey[500])),
+                      const Spacer(),
+                      Text(
+                        durationDays != null
+                            ? '$durationDays working day${durationDays > 1 ? 's' : ''}'
+                            : '—',
+                        style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A2E)),
+                      ),
+                    ],
+                  ),
+                ),
         ],
       ),
     );
   }
 
-  // ── 6 · Negotiation ──────────────────────────────────────────────────────
+  Widget _readDateBox({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(icon, size: 13, color: color),
+            const SizedBox(width: 4),
+            Text(label,
+                style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+          ]),
+          const SizedBox(height: 6),
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A2E))),
+        ],
+      ),
+    );
+  }
+
+  Widget _tappableDateBox({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withOpacity(0.5), width: 1.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(icon, size: 13, color: color),
+              const SizedBox(width: 4),
+              Text(label,
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+              const Spacer(),
+              Icon(Icons.edit_calendar_outlined, size: 12, color: color),
+            ]),
+            const SizedBox(height: 6),
+            Text(value,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── 4 · Price ────────────────────────────────────────────────────────────
+
+  Widget _buildPriceSection() {
+    return _SectionCard(
+      title: 'Price',
+      icon: Icons.currency_pound_rounded,
+      accentColor: const Color(0xFF6C63FF),
+      editMode: _editMode,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Guide range — always read-only
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Guide Range',
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey[500])),
+                Text(
+                  '£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A2E)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Agreed Price',
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600])),
+          const SizedBox(height: 8),
+          _editMode
+              ? TextField(
+                  controller: _priceController,
+                  keyboardType: TextInputType.number,
+                  style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A2E)),
+                  decoration: _inputDeco('0').copyWith(
+                    prefixText: '£',
+                    prefixStyle: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF6C63FF)),
+                  ),
+                )
+              : Text(
+                  '£${widget.task.guidePrice.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A2E)),
+                ),
+        ],
+      ),
+    );
+  }
+
+  // ── 5 · Negotiation ──────────────────────────────────────────────────────
 
   Widget _buildNegotiationSection() {
     return _SectionCard(
@@ -776,24 +987,20 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   }
 
   Widget _feeBox(String label, String amount, bool highlight) {
-    final color = const Color(0xFF4ECDC4);
+    const color = Color(0xFF4ECDC4);
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
-        color:
-            highlight ? color.withOpacity(0.08) : Colors.grey.shade50,
+        color: highlight ? color.withOpacity(0.08) : Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: highlight
-              ? color.withOpacity(0.25)
-              : Colors.grey.shade200,
+          color: highlight ? color.withOpacity(0.25) : Colors.grey.shade200,
         ),
       ),
       child: Column(
         children: [
           Text(label,
-              style:
-                  TextStyle(fontSize: 11, color: Colors.grey[500])),
+              style: TextStyle(fontSize: 11, color: Colors.grey[500])),
           const SizedBox(height: 4),
           Text(amount,
               style: TextStyle(
@@ -808,22 +1015,19 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   // ── 7 · Action space ─────────────────────────────────────────────────────
 
   Widget _buildActionSpaceSection() {
-    final Map<String, _ActionMeta> actionMeta = {
+    final actionMeta = <String, _ActionMeta>{
       'accept_task': _ActionMeta(
-        label: 'Accept Task',
-        icon: Icons.check_circle_outline_rounded,
-        color: const Color(0xFF43C59E),
-      ),
+          label: 'Accept Task',
+          icon: Icons.check_circle_outline_rounded,
+          color: const Color(0xFF43C59E)),
       'deny_task': _ActionMeta(
-        label: 'Deny Task',
-        icon: Icons.cancel_outlined,
-        color: const Color(0xFFFF6B6B),
-      ),
+          label: 'Deny Task',
+          icon: Icons.cancel_outlined,
+          color: const Color(0xFFFF6B6B)),
       'negotiate_task': _ActionMeta(
-        label: 'Negotiate',
-        icon: Icons.handshake_outlined,
-        color: const Color(0xFF4ECDC4),
-      ),
+          label: 'Negotiate',
+          icon: Icons.handshake_outlined,
+          color: const Color(0xFF4ECDC4)),
     };
 
     return _SectionCard(
@@ -837,17 +1041,14 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           final meta = actionMeta[action];
           if (meta == null) return const SizedBox.shrink();
           return GestureDetector(
-            onTap: () {
-              // TODO: wire up action handlers
-            },
+            onTap: () { /* TODO */ },
             child: Container(
               padding: const EdgeInsets.symmetric(
                   horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: meta.color.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border:
-                    Border.all(color: meta.color.withOpacity(0.25)),
+                border: Border.all(color: meta.color.withOpacity(0.25)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -878,8 +1079,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           Icon(Icons.history_rounded, size: 12, color: Colors.grey[350]),
           const SizedBox(width: 4),
           Text('Created ',
-              style:
-                  TextStyle(fontSize: 11, color: Colors.grey[400])),
+              style: TextStyle(fontSize: 11, color: Colors.grey[400])),
           Text(
             _formatDateTime(widget.task.metadata['createdAt'] as String?),
             style: TextStyle(
@@ -891,8 +1091,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           Icon(Icons.edit_outlined, size: 12, color: Colors.grey[350]),
           const SizedBox(width: 4),
           Text('Updated ',
-              style:
-                  TextStyle(fontSize: 11, color: Colors.grey[400])),
+              style: TextStyle(fontSize: 11, color: Colors.grey[400])),
           Text(
             _formatDateTime(widget.task.metadata['updatedAt'] as String?),
             style: TextStyle(
@@ -906,7 +1105,9 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Supporting classes (top-level)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _ActionMeta {
   final String label;
@@ -916,12 +1117,11 @@ class _ActionMeta {
       {required this.label, required this.icon, required this.color});
 }
 
-// ── Reusable sub-widgets ──────────────────────────────────────────────────────
-
 class _SectionCard extends StatelessWidget {
   final String title;
   final IconData icon;
   final Color? accentColor;
+  final bool editMode;
   final Widget child;
 
   const _SectionCard({
@@ -929,19 +1129,25 @@ class _SectionCard extends StatelessWidget {
     required this.icon,
     required this.child,
     this.accentColor,
+    this.editMode = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final accent = accentColor ?? const Color(0xFF6C63FF);
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: editMode
+            ? Border.all(
+                color: const Color(0xFF6C63FF).withOpacity(0.3), width: 1.5)
+            : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
+            color: Colors.black.withOpacity(editMode ? 0.06 : 0.04),
+            blurRadius: editMode ? 14 : 10,
             offset: const Offset(0, 2),
           ),
         ],
@@ -967,12 +1173,27 @@ class _SectionCard extends StatelessWidget {
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF1A1A2E))),
+                if (editMode) ...[
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6C63FF).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text('Editable',
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: Color(0xFF6C63FF),
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ],
               ],
             ),
           ),
           Divider(height: 1, color: Colors.grey.shade100),
-          Padding(
-              padding: const EdgeInsets.all(16), child: child),
+          Padding(padding: const EdgeInsets.all(16), child: child),
         ],
       ),
     );

@@ -1,0 +1,76 @@
+name: renovation
+description: "Template for BuilderVet home renovation tasks"
+prompt_name: task_generation
+prompt_variant: default
+
+# Default fields added to every generated task
+default_fields:
+  status: "draft"
+  participantIds: []
+  metadata: {}
+
+# Action space for taskType: task (builder/assignee actions)
+# These are the actions available to the assigned builder.
+# Updated automatically as status changes:
+#   draft / pending_acceptance → accept_task, deny_task, negotiate_task
+#   negotiating                → accept_task, deny_task
+#   active                     → photo_task, invoice_task, add_note
+#   done / denied              → (empty)
+initial_action_space:
+  - accept_task
+  - deny_task
+  - negotiate_task
+
+# Action space for taskType: project (project owner actions)
+project_action_space:
+  - view_tasks
+  - review_quotes
+  - schedule_work
+  - upload_photo
+  - view_progress
+  - manage_team
+  - create_invoice
+
+# Action space transitions for taskType: task based on status
+# Used by the backend/Flutter to update actionSpace when status changes
+action_space_by_status:
+  draft:
+    - accept_task
+    - deny_task
+    - negotiate_task
+  pending_acceptance:
+    - accept_task
+    - deny_task
+    - negotiate_task
+  negotiating:
+    - accept_task
+    - deny_task
+  active:
+    - photo_task
+    - invoice_task
+    - add_note
+  done: []
+  denied: []
+
+# Subcollections to create for each task
+subcollections:
+  - name: events
+    initial_data:
+      type: "task_created"
+      timestamp: "$now"
+      actorId: "$user_id"
+      actorName: "$user_name"
+      actorRole: "$user_role"
+      data: {}
+
+# Subcollections to create for the project
+project_subcollections:
+  - name: events
+    initial_data:
+      type: "task_created"
+      timestamp: "$now"
+      actorId: "$user_id"
+      actorName: "$user_name"
+      actorRole: "$user_role"
+      data:
+        note: "Project created from AI task generation"
