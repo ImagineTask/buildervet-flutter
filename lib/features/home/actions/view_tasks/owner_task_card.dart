@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/task_model.dart';
 import '../schedule_work/task_schedule_detail_page.dart';
+import 'task_detail_page.dart';
 
 class OwnerTaskCard extends StatefulWidget {
   final TaskModel task;
@@ -13,8 +14,6 @@ class OwnerTaskCard extends StatefulWidget {
 }
 
 class _OwnerTaskCardState extends State<OwnerTaskCard> {
-  bool _expanded = false;
-
   // ── Helpers ─────────────────────────────────────────────────────────────
 
   bool get _hasNegotiation =>
@@ -261,428 +260,348 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: _hasNegotiation
-            ? Border.all(color: const Color(0xFF4ECDC4), width: 1.5)
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TaskDetailPage(task: widget.task),
+        ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Task name + status
-                Row(
-                  children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: _statusColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        widget.task.taskName,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A1A2E),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _statusColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        _statusLabel,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: _statusColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-
-                // Contractor type
-                if (widget.task.contractorType != null)
-                  Row(
-                    children: [
-                      Icon(Icons.work_outline,
-                          size: 13, color: Colors.grey[400]),
-                      const SizedBox(width: 6),
-                      Text(widget.task.contractorType!,
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.grey[500])),
-                    ],
-                  ),
-                const SizedBox(height: 6),
-
-                // Assigned builders
-                Row(
-                  children: [
-                    Icon(Icons.person_outline,
-                        size: 13, color: Colors.grey[400]),
-                    const SizedBox(width: 6),
-                    widget.task.assignedBuilderIds.isNotEmpty
-                        ? Text(
-                            '${widget.task.assignedBuilderIds.length} builder(s) assigned',
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey[500]),
-                          )
-                        : Text('No builder assigned',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.orange[400])),
-                  ],
-                ),
-                const SizedBox(height: 6),
-
-                // Scheduled days
-                Row(
-                  children: [
-                    Icon(Icons.calendar_today_outlined,
-                        size: 13, color: Colors.grey[400]),
-                    const SizedBox(width: 6),
-                    _scheduledDays > 0
-                        ? Text(
-                            '$_scheduledDays working day${_scheduledDays > 1 ? 's' : ''} scheduled',
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey[500]),
-                          )
-                        : Text('Not scheduled',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.orange[400])),
-                  ],
-                ),
-                const SizedBox(height: 6),
-
-                // Fee
-                Row(
-                  children: [
-                    Icon(Icons.currency_pound,
-                        size: 13, color: Colors.grey[400]),
-                    const SizedBox(width: 6),
-                    Text(
-                      '£${widget.task.guidePrice.toStringAsFixed(0)}',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                          fontWeight: FontWeight.w600),
-                    ),
-                    Text(
-                      ' (£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)} guide)',
-                      style: TextStyle(
-                          fontSize: 11, color: Colors.grey[400]),
-                    ),
-                  ],
-                ),
-
-                // ── Edit button ─────────────────────────────────────
-                const SizedBox(height: 12),
-                const Divider(height: 1),
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          TaskScheduleDetailPage(task: widget.task),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.edit_outlined,
-                          size: 14, color: Color(0xFF6C63FF)),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Edit task',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6C63FF),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // ── Collapsible description ──────────────────────────
-                if (widget.task.description.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  GestureDetector(
-                    onTap: () => setState(() => _expanded = !_expanded),
-                    child: Row(
-                      children: [
-                        Text(
-                          _expanded ? 'Hide details' : 'Show details',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF6C63FF),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        AnimatedRotation(
-                          turns: _expanded ? 0.5 : 0,
-                          duration: const Duration(milliseconds: 200),
-                          child: const Icon(
-                            Icons.keyboard_arrow_down,
-                            size: 16,
-                            color: Color(0xFF6C63FF),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Animated description
-                  AnimatedCrossFade(
-                    firstChild: const SizedBox.shrink(),
-                    secondChild: Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F5F5),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          widget.task.description,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey[600],
-                            height: 1.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                    crossFadeState: _expanded
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    duration: const Duration(milliseconds: 250),
-                  ),
-                ],
-              ],
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: _hasNegotiation
+              ? Border.all(color: const Color(0xFF4ECDC4), width: 1.5)
+              : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-          ),
-
-          // ── Negotiation Section ──────────────────────────────────────
-          if (_hasNegotiation) ...[
-            Container(
-              width: double.infinity,
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4ECDC4).withOpacity(0.06),
-                borderRadius: const BorderRadius.only(
-                  bottomLeft: Radius.circular(14),
-                  bottomRight: Radius.circular(14),
-                ),
-              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Negotiation header
+                  // Task name + status
                   Row(
                     children: [
-                      const Icon(Icons.handshake_outlined,
-                          size: 16, color: Color(0xFF4ECDC4)),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'Negotiation Request',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF4ECDC4),
-                        ),
-                      ),
-                      const Spacer(),
-                      if (_negotiation['submittedAt'] != null)
-                        Text(
-                          _formatDate(_negotiation['submittedAt']),
-                          style: TextStyle(
-                              fontSize: 11, color: Colors.grey[400]),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Fee comparison
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _negotiationFeeBox(
-                          label: 'Current Fee',
-                          amount:
-                              '£${(_negotiation['currentFee'] as num?)?.toStringAsFixed(0) ?? widget.task.guidePrice.toStringAsFixed(0)}',
-                          color: Colors.grey,
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: _statusColor,
+                          shape: BoxShape.circle,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.arrow_forward,
-                          size: 16, color: Colors.grey),
-                      const SizedBox(width: 8),
                       Expanded(
-                        child: _negotiationFeeBox(
-                          label: 'Requested Fee',
-                          amount:
-                              '£${(_negotiation['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
-                          color: const Color(0xFF4ECDC4),
-                          highlight: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Reason
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(Icons.info_outline,
-                            size: 14, color: Colors.grey[400]),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            _negotiation['reason'] ?? '',
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey[600]),
+                        child: Text(
+                          widget.task.taskName,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1A1A2E),
                           ),
                         ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _statusLabel,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _statusColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Contractor type
+                  if (widget.task.contractorType != null)
+                    Row(
+                      children: [
+                        Icon(Icons.work_outline,
+                            size: 13, color: Colors.grey[400]),
+                        const SizedBox(width: 6),
+                        Text(widget.task.contractorType!,
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[500])),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 6),
 
-                  // Action buttons
+                  // Assigned builders
                   Row(
                     children: [
-                      // Accept
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _acceptNegotiation(context),
-                          child: Container(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF43C59E),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.check_rounded,
-                                    color: Colors.white, size: 16),
-                                SizedBox(width: 4),
-                                Text('Accept',
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
+                      Icon(Icons.person_outline,
+                          size: 13, color: Colors.grey[400]),
+                      const SizedBox(width: 6),
+                      widget.task.assignedBuilderIds.isNotEmpty
+                          ? Text(
+                              '${widget.task.assignedBuilderIds.length} builder(s) assigned',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[500]),
+                            )
+                          : Text('No builder assigned',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.orange[400])),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
 
-                      // Counter
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _counterOffer(context),
-                          child: Container(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF6C63FF),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.swap_horiz_rounded,
-                                    color: Colors.white, size: 16),
-                                SizedBox(width: 4),
-                                Text('Counter',
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
+                  // Scheduled days
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today_outlined,
+                          size: 13, color: Colors.grey[400]),
+                      const SizedBox(width: 6),
+                      _scheduledDays > 0
+                          ? Text(
+                              '$_scheduledDays working day${_scheduledDays > 1 ? 's' : ''} scheduled',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[500]),
+                            )
+                          : Text('Not scheduled',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.orange[400])),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
 
-                      // Decline
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _declineNegotiation(context),
-                          child: Container(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFF6B6B),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.close_rounded,
-                                    color: Colors.white, size: 16),
-                                SizedBox(width: 4),
-                                Text('Decline',
-                                    style: TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13)),
-                              ],
-                            ),
-                          ),
-                        ),
+                  // Fee
+                  Row(
+                    children: [
+                      Icon(Icons.currency_pound,
+                          size: 13, color: Colors.grey[400]),
+                      const SizedBox(width: 6),
+                      Text(
+                        '£${widget.task.guidePrice.toStringAsFixed(0)}',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                            fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        ' (£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)} guide)',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey[400]),
                       ),
                     ],
                   ),
                 ],
               ),
             ),
+
+            // ── Negotiation Section ──────────────────────────────────────
+            if (_hasNegotiation) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4ECDC4).withOpacity(0.06),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(14),
+                    bottomRight: Radius.circular(14),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Negotiation header
+                    Row(
+                      children: [
+                        const Icon(Icons.handshake_outlined,
+                            size: 16, color: Color(0xFF4ECDC4)),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Negotiation Request',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF4ECDC4),
+                          ),
+                        ),
+                        const Spacer(),
+                        if (_negotiation['submittedAt'] != null)
+                          Text(
+                            _formatDate(_negotiation['submittedAt']),
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[400]),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Fee comparison
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _negotiationFeeBox(
+                            label: 'Current Fee',
+                            amount:
+                                '£${(_negotiation['currentFee'] as num?)?.toStringAsFixed(0) ?? widget.task.guidePrice.toStringAsFixed(0)}',
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward,
+                            size: 16, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _negotiationFeeBox(
+                            label: 'Requested Fee',
+                            amount:
+                                '£${(_negotiation['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                            color: const Color(0xFF4ECDC4),
+                            highlight: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Reason
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 14, color: Colors.grey[400]),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _negotiation['reason'] ?? '',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[600]),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Action buttons
+                    Row(
+                      children: [
+                        // Accept
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _acceptNegotiation(context),
+                            child: Container(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF43C59E),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.check_rounded,
+                                      color: Colors.white, size: 16),
+                                  SizedBox(width: 4),
+                                  Text('Accept',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Counter
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _counterOffer(context),
+                            child: Container(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF6C63FF),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.swap_horiz_rounded,
+                                      color: Colors.white, size: 16),
+                                  SizedBox(width: 4),
+                                  Text('Counter',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Decline
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => _declineNegotiation(context),
+                            child: Container(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFF6B6B),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.close_rounded,
+                                      color: Colors.white, size: 16),
+                                  SizedBox(width: 4),
+                                  Text('Decline',
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
