@@ -22,6 +22,7 @@ class ReviewQuotesAction extends BaseActionTile {
         builder: (_) => QuoteManagementPage(
           projectId: project.taskId,
           projectName: project.taskName,
+          ownerId: project.ownerId,
         ),
       ),
     );

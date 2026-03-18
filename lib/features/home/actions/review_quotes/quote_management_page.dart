@@ -8,23 +8,21 @@ import 'create_quote_page.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // QuoteManagementPage
 //
-// Contractor:
-//   Empty  → "Create a Quote" button → CreateQuotePage
-//   Quoted → QuoteCard per submitted quote + "Update Quote" button
-//
-// Homeowner:
-//   Empty  → "Awaiting quotes" message
-//   Quoted → QuoteCard per builder quote → tap → QuoteDetailPage
+// Button logic is based on uid vs ownerId — not role:
+//   currentUid == ownerId  → project owner → sees Approve / Decline on cards
+//   currentUid != ownerId  → builder       → sees Send / Update Quote
 // ─────────────────────────────────────────────────────────────────────────────
 
 class QuoteManagementPage extends StatelessWidget {
   final String projectId;
   final String projectName;
+  final String ownerId;
 
   const QuoteManagementPage({
     super.key,
     required this.projectId,
     required this.projectName,
+    required this.ownerId,
   });
 
   Future<String> _fetchRole() async {
@@ -69,8 +67,6 @@ class QuoteManagementPage extends StatelessWidget {
             );
           }
           final role = roleSnapshot.data ?? 'homeowner';
-          final isContractor = role == 'contractor';
-          final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -80,8 +76,7 @@ class QuoteManagementPage extends StatelessWidget {
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(
-                  child: CircularProgressIndicator(
-                      color: Color(0xFF43C59E)),
+                  child: CircularProgressIndicator(color: Color(0xFF43C59E)),
                 );
               }
 
@@ -90,16 +85,9 @@ class QuoteManagementPage extends StatelessWidget {
                   .toList()
                 ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-              // Contractor only sees their own quotes
-              final visibleQuotes = isContractor
-                  ? allQuotes
-                      .where((q) => q.builderId == uid)
-                      .toList()
-                  : allQuotes;
-
-              if (visibleQuotes.isEmpty) {
+              if (allQuotes.isEmpty) {
                 return _EmptyState(
-                  isContractor: isContractor,
+                  isOwner: role.toLowerCase() == 'homeowner',
                   projectId: projectId,
                   projectName: projectName,
                 );
@@ -107,29 +95,18 @@ class QuoteManagementPage extends StatelessWidget {
 
               return Column(
                 children: [
-                  QuoteSummaryBar(quotes: visibleQuotes),
+                  QuoteSummaryBar(quotes: allQuotes),
                   const Divider(height: 1),
                   Expanded(
                     child: ListView.builder(
                       padding: const EdgeInsets.all(16),
-                      itemCount: visibleQuotes.length +
-                          (isContractor ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        // Contractor gets "Update Quote" at the bottom
-                        if (isContractor &&
-                            index == visibleQuotes.length) {
-                          return Padding(
-                            padding: const EdgeInsets.only(
-                                top: 4, bottom: 24),
-                            child: _UpdateQuoteButton(
-                              projectId: projectId,
-                              projectName: projectName,
-                            ),
-                          );
-                        }
-                        return QuoteCard(
-                            quote: visibleQuotes[index]);
-                      },
+                      itemCount: allQuotes.length,
+                      itemBuilder: (context, index) => QuoteCard(
+                        quote: allQuotes[index],
+                        currentUid: FirebaseAuth.instance.currentUser?.uid ?? '',
+                        ownerId: ownerId,
+                        role: role,
+                      ),
                     ),
                   ),
                 ],
@@ -147,12 +124,12 @@ class QuoteManagementPage extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
-  final bool isContractor;
+  final bool isOwner;
   final String projectId;
   final String projectName;
 
   const _EmptyState({
-    required this.isContractor,
+    required this.isOwner,
     required this.projectId,
     required this.projectName,
   });
@@ -180,7 +157,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              isContractor ? 'No quote yet' : 'Awaiting quotes',
+              isOwner ? 'Awaiting quotes' : 'No quote yet',
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -189,116 +166,49 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              isContractor
-                  ? 'Submit a quote for this project to get started.'
-                  : 'Builders will submit quotes for your project here.',
+              isOwner
+                  ? 'Builders will submit quotes for your project here.'
+                  : 'Submit a quote for this project to get started.',
               style: TextStyle(fontSize: 13, color: Colors.grey[500]),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 28),
-            GestureDetector(
-              onTap: isContractor
-                  ? () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CreateQuotePage(
-                            projectId: projectId,
-                            projectName: projectName,
-                          ),
+            if (!isOwner)
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CreateQuotePage(
+                      projectId: projectId,
+                      projectName: projectName,
+                    ),
+                  ),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 28, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF43C59E),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add_circle_outline,
+                          color: Colors.white, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Create a Quote',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
                         ),
-                      )
-                  : null,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 28, vertical: 14),
-                decoration: BoxDecoration(
-                  color: isContractor
-                      ? const Color(0xFF43C59E)
-                      : Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isContractor
-                          ? Icons.add_circle_outline
-                          : Icons.hourglass_empty_rounded,
-                      color:
-                          isContractor ? Colors.white : Colors.grey[500],
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      isContractor
-                          ? 'Create a Quote'
-                          : 'Request a Quote',
-                      style: TextStyle(
-                        color: isContractor
-                            ? Colors.white
-                            : Colors.grey[600],
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15,
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Update Quote Button — contractor can resubmit after quoting
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _UpdateQuoteButton extends StatelessWidget {
-  final String projectId;
-  final String projectName;
-
-  const _UpdateQuoteButton({
-    required this.projectId,
-    required this.projectName,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CreateQuotePage(
-            projectId: projectId,
-            projectName: projectName,
-          ),
-        ),
-      ),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: const Color(0xFF43C59E).withValues(alpha: 0.4)),
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.edit_outlined, size: 16, color: Color(0xFF43C59E)),
-            SizedBox(width: 8),
-            Text(
-              'Update Quote',
-              style: TextStyle(
-                color: Color(0xFF43C59E),
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
-            ),
           ],
         ),
       ),

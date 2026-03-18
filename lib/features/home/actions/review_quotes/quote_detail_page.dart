@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'quote_models.dart';
 import 'quote_card.dart';
+import 'create_quote_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QuoteDetailPage
@@ -12,8 +13,9 @@ import 'quote_card.dart';
 
 class QuoteDetailPage extends StatelessWidget {
   final QuoteModel quote;
+  final String role;
 
-  const QuoteDetailPage({super.key, required this.quote});
+  const QuoteDetailPage({super.key, required this.quote, required this.role});
 
   @override
   Widget build(BuildContext context) {
@@ -252,9 +254,9 @@ class QuoteDetailPage extends StatelessWidget {
             ),
           ),
 
-          // ── Approve / Decline ─────────────────────────────────────────
-          if (quote.status == 'pending') ...[
-            const SizedBox(height: 20),
+          // ── Role-aware actions ───────────────────────────────────────
+          const SizedBox(height: 20),
+          if (role.toLowerCase() == 'homeowner') ...[
             _ApproveButton(quote: quote),
             const SizedBox(height: 10),
             _DeclineButton(quote: quote),
@@ -262,6 +264,122 @@ class QuoteDetailPage extends StatelessWidget {
           const SizedBox(height: 32),
         ],
       ),
+    );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Contractor Actions — shown instead of approve/decline for contractors
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ContractorActions extends StatelessWidget {
+  final QuoteModel quote;
+
+  const _ContractorActions({required this.quote});
+
+  @override
+  Widget build(BuildContext context) {
+    final isPending = quote.status == 'pending';
+    final isDeclined = quote.status == 'declined';
+
+    return Column(
+      children: [
+        // Status info banner
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: isPending
+                ? const Color(0xFFFFB347).withValues(alpha: 0.1)
+                : isDeclined
+                    ? const Color(0xFFFF6B6B).withValues(alpha: 0.1)
+                    : const Color(0xFF43C59E).withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isPending
+                  ? const Color(0xFFFFB347).withValues(alpha: 0.3)
+                  : isDeclined
+                      ? const Color(0xFFFF6B6B).withValues(alpha: 0.3)
+                      : const Color(0xFF43C59E).withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isPending
+                    ? Icons.hourglass_empty_rounded
+                    : isDeclined
+                        ? Icons.cancel_outlined
+                        : Icons.check_circle_outline,
+                size: 16,
+                color: isPending
+                    ? const Color(0xFFFFB347)
+                    : isDeclined
+                        ? const Color(0xFFFF6B6B)
+                        : const Color(0xFF43C59E),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isPending
+                    ? 'Awaiting homeowner review'
+                    : isDeclined
+                        ? 'This quote was declined'
+                        : 'This quote was approved',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isPending
+                      ? const Color(0xFFFFB347)
+                      : isDeclined
+                          ? const Color(0xFFFF6B6B)
+                          : const Color(0xFF43C59E),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // Update quote button — always available to contractor
+        GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CreateQuotePage(
+                projectId: quote.projectId,
+                projectName: '',
+              ),
+            ),
+          ),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: const Color(0xFF43C59E).withValues(alpha: 0.4)),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.edit_outlined,
+                    size: 16, color: Color(0xFF43C59E)),
+                SizedBox(width: 8),
+                Text(
+                  'Update Quote',
+                  style: TextStyle(
+                    color: Color(0xFF43C59E),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
