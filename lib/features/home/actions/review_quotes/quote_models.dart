@@ -16,15 +16,25 @@ class ProjectQuote {
   final String status; // pending | accepted | declined
   final DateTime submittedAt;
 
+  final double agreedMaterial;
+  final double agreedLabour;
+  final String? homeownerId;
+  final String? declineReason;
+
   double get total => totalMaterial + totalLabour;
+  double get agreedTotal => agreedMaterial + agreedLabour;
 
   const ProjectQuote({
     required this.builderId,
     required this.builderName,
     required this.totalMaterial,
     required this.totalLabour,
+    required this.agreedMaterial,
+    required this.agreedLabour,
     required this.status,
     required this.submittedAt,
+    this.homeownerId,
+    this.declineReason,
   });
 
   /// Derives one ProjectQuote from all task documents.
@@ -39,13 +49,27 @@ class ProjectQuote {
     final totalLabour =
         quoted.fold<double>(0, (s, t) => s + (t.quoteLabour ?? 0));
 
+    final agreedMaterial =
+        quoted.fold<double>(0, (s, t) => s + (t.agreedMaterial ?? 0));
+    final agreedLabour =
+        quoted.fold<double>(0, (s, t) => s + (t.agreedLabour ?? 0));
+
+    // Find homeowner — first participant who is not the builder
+    final builderId = first.quoteBuilderId ?? '';
+    final homeownerId = first.participantIds
+        .firstWhere((id) => id != builderId, orElse: () => '');
+
     return ProjectQuote(
-      builderId: first.quoteBuilderId ?? '',
+      builderId: builderId,
       builderName: first.quoteBuilderName ?? 'Unknown Builder',
       totalMaterial: totalMaterial,
       totalLabour: totalLabour,
+      agreedMaterial: agreedMaterial,
+      agreedLabour: agreedLabour,
       status: first.quoteStatus ?? 'pending',
       submittedAt: first.quoteSubmittedAt ?? DateTime.now(),
+      homeownerId: homeownerId.isEmpty ? null : homeownerId,
+      declineReason: first.quoteDeclineReason,
     );
   }
 }
@@ -70,6 +94,10 @@ class TaskItem {
   final double? quoteLabour;
   final String? quoteStatus;
   final DateTime? quoteSubmittedAt;
+  final double? agreedMaterial;
+  final double? agreedLabour;
+  final List<String> participantIds;
+  final String? quoteDeclineReason;
 
   bool get hasQuote => quoteBuilderId != null;
   double get quoteTotal => (quoteMaterial ?? 0) + (quoteLabour ?? 0);
@@ -88,6 +116,10 @@ class TaskItem {
     this.quoteLabour,
     this.quoteStatus,
     this.quoteSubmittedAt,
+    this.agreedMaterial,
+    this.agreedLabour,
+    this.participantIds = const [],
+    this.quoteDeclineReason,
   });
 
   factory TaskItem.fromFirestore(DocumentSnapshot doc) {
@@ -107,6 +139,10 @@ class TaskItem {
       quoteLabour: (d['quoteLabour'])?.toDouble(),
       quoteStatus: d['quoteStatus'],
       quoteSubmittedAt: _parseDate(d['quoteSubmittedAt']),
+      agreedMaterial: (d['agreedMaterial'])?.toDouble(),
+      agreedLabour: (d['agreedLabour'])?.toDouble(),
+      participantIds: List<String>.from(d['participantIds'] ?? []),
+      quoteDeclineReason: d['quoteDeclineReason'],
     );
   }
 

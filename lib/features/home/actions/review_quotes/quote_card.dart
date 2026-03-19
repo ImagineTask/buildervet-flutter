@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'quote_models.dart';
 import 'quote_detail_page.dart';
 import 'create_quote_page.dart';
+import 'send_quote_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QuoteCard
@@ -14,7 +15,7 @@ import 'create_quote_page.dart';
 // Tap card  → QuoteDetailPage (breakdown per task)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class QuoteCard extends StatelessWidget {
+class QuoteCard extends StatefulWidget {
   final ProjectQuote quote;
   final List<TaskItem> tasks;
   final String role;
@@ -31,44 +32,76 @@ class QuoteCard extends StatelessWidget {
   });
 
   @override
+  State<QuoteCard> createState() => _QuoteCardState();
+}
+
+class _QuoteCardState extends State<QuoteCard> {
+  String? _homeownerName;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchHomeownerName();
+  }
+
+  Future<void> _fetchHomeownerName() async {
+    final uid = widget.quote.homeownerId;
+    if (uid == null || uid.isEmpty) return;
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .get();
+    if (mounted) {
+      setState(() {
+        _homeownerName = doc.data()?['name'] as String?;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final quote = widget.quote;
+    final tasks = widget.tasks;
+    final role = widget.role;
+    final projectId = widget.projectId;
+    final projectName = widget.projectName;
     final isBuilder = role.toLowerCase() == 'builder';
     final isPending = quote.status == 'pending';
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: isPending
-            ? Border.all(color: const Color(0xFFFFB347), width: 1.5)
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => QuoteDetailPage(
+            tasks: tasks,
+            quote: quote,
+            role: role,
+            projectId: projectId,
           ),
-        ],
+        ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Top row — tap to see breakdown ────────────────────────
-            GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => QuoteDetailPage(
-                    tasks: tasks,
-                    quote: quote,
-                    role: role,
-                    projectId: projectId,
-                  ),
-                ),
-              ),
-              child: Row(
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: isPending
+              ? Border.all(color: const Color(0xFFFFB347), width: 1.5)
+              : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Top row ───────────────────────────────────────────
+              Row(
                 children: [
                   Container(
                     width: 46,
@@ -107,27 +140,42 @@ class QuoteCard extends StatelessWidget {
                             ),
                           ],
                         ),
+                        if (isBuilder && _homeownerName != null) ...[
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              Icon(Icons.home_outlined,
+                                  size: 12, color: Colors.grey[400]),
+                              const SizedBox(width: 4),
+                              Text(
+                                _homeownerName!,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500]),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Row(
-                        children: [
-                          Icon(Icons.currency_pound,
-                              size: 13, color: Colors.grey[400]),
-                          Text(
-                            quote.total.toStringAsFixed(0),
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1A1A2E),
-                            ),
-                          ),
-                        ],
+                      // Quote total
+                      _AmountRow(
+                        label: 'Quote',
+                        amount: quote.total,
+                        color: const Color(0xFF1A1A2E),
                       ),
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 4),
+                      // Agreed total
+                      _AmountRow(
+                        label: 'Agreed',
+                        amount: quote.agreedTotal,
+                        color: const Color(0xFF43C59E),
+                      ),
+                      const SizedBox(height: 6),
                       QuoteStatusBadge(status: quote.status),
                     ],
                   ),
@@ -136,58 +184,129 @@ class QuoteCard extends StatelessWidget {
                       color: Colors.grey[300], size: 20),
                 ],
               ),
-            ),
 
-            // ── Action buttons ─────────────────────────────────────────
-            const SizedBox(height: 14),
-            const Divider(height: 1),
-            const SizedBox(height: 14),
+              // ── Decline reason (builder only) ─────────────────────────
+              if (isBuilder &&
+                  quote.status == 'declined' &&
+                  quote.declineReason != null &&
+                  quote.declineReason!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF6B6B).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: const Color(0xFFFF6B6B)
+                            .withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.message_outlined,
+                          size: 14, color: Color(0xFFFF6B6B)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          quote.declineReason!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFFF6B6B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
-            if (isBuilder)
-              Row(
-                children: [
-                  Expanded(
-                    child: _CardButton(
-                      label: 'Send Quote',
-                      icon: Icons.send_rounded,
-                      filled: true,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CreateQuotePage(
-                            projectId: projectId,
-                            projectName: projectName,
+              // ── New quote alert (homeowner only) ──────────────────────
+              if (!isBuilder &&
+                  quote.agreedTotal > 0 &&
+                  quote.total != quote.agreedTotal &&
+                  quote.status != 'declined') ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFB347).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: const Color(0xFFFFB347).withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline,
+                          size: 15, color: Color(0xFFFFB347)),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'A new quote has been submitted. Please review and make a decision.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFFFB347),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              // ── Action buttons ─────────────────────────────────────────
+              const SizedBox(height: 14),
+              const Divider(height: 1),
+              const SizedBox(height: 14),
+              if (isBuilder)
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CardButton(
+                        label: 'Send Quote',
+                        icon: Icons.send_rounded,
+                        filled: true,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SendQuotePage(
+                              projectId: projectId,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _CardButton(
-                      label: 'Update',
-                      icon: Icons.edit_outlined,
-                      filled: false,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CreateQuotePage(
-                            projectId: projectId,
-                            projectName: projectName,
-                            existingTasks: tasks,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _CardButton(
+                        label: 'Update',
+                        icon: Icons.edit_outlined,
+                        filled: false,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CreateQuotePage(
+                              projectId: projectId,
+                              projectName: projectName,
+                              existingTasks: tasks,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
-              )
-            else
-              _HomeownerActions(
-                tasks: tasks,
-                quote: quote,
-              ),
-          ],
+                  ],
+                )
+              else
+                _HomeownerActions(
+                  tasks: tasks,
+                  quote: quote,
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -212,17 +331,35 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
   bool _loadingApprove = false;
   bool _loadingDecline = false;
 
-  Future<void> _updateAll(String status) async {
+  Future<void> _updateAll(String status,
+      {String declineMessage = ''}) async {
     final batch = FirebaseFirestore.instance.batch();
     for (final task in widget.tasks) {
       if (!task.hasQuote) continue;
       final ref = FirebaseFirestore.instance
           .collection('tasks')
           .doc(task.taskId);
-      batch.update(ref, {
+
+      final fields = <String, dynamic>{
         'quoteStatus': status,
         'quoteResolvedAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      // Save agreed figures when approved
+      if (status == 'accepted') {
+        fields['agreedMaterial'] = task.quoteMaterial ?? 0;
+        fields['agreedLabour'] = task.quoteLabour ?? 0;
+        fields['agreedTotal'] =
+            (task.quoteMaterial ?? 0) + (task.quoteLabour ?? 0);
+        fields['agreedAt'] = FieldValue.serverTimestamp();
+      }
+
+      // Save decline message if provided
+      if (status == 'declined' && declineMessage.isNotEmpty) {
+        fields['quoteDeclineReason'] = declineMessage;
+      }
+
+      batch.update(ref, fields);
     }
     await batch.commit();
   }
@@ -254,6 +391,8 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
   }
 
   Future<void> _decline() async {
+    final messageController = TextEditingController();
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -263,9 +402,41 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
             style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1A1A2E))),
-        content: Text(
-          'Decline the quote from ${widget.quote.builderName}?',
-          style: const TextStyle(color: Colors.grey),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Decline the quote from ${widget.quote.builderName}?',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: messageController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Leave a message for the builder (optional)',
+                hintStyle:
+                    TextStyle(color: Colors.grey[400], fontSize: 13),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide:
+                      BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide:
+                      BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(
+                      color: Color(0xFFFF6B6B), width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -285,11 +456,17 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true) {
+      messageController.dispose();
+      return;
+    }
+
+    final message = messageController.text.trim();
+    messageController.dispose();
 
     setState(() => _loadingDecline = true);
     try {
-      await _updateAll('declined');
+      await _updateAll('declined', declineMessage: message);
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -396,6 +573,45 @@ class _CardButton extends StatelessWidget {
                 ),
         ),
       ),
+    );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _AmountRow — label + amount display
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AmountRow extends StatelessWidget {
+  final String label;
+  final double amount;
+  final Color color;
+
+  const _AmountRow({
+    required this.label,
+    required this.amount,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label: ',
+          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+        ),
+        Icon(Icons.currency_pound, size: 11, color: color),
+        Text(
+          amount.toStringAsFixed(0),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

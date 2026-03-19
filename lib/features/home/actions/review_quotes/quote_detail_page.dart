@@ -91,21 +91,14 @@ class QuoteDetailPage extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Row(
-                      children: [
-                        Icon(Icons.currency_pound,
-                            size: 14, color: Colors.grey[400]),
-                        Text(
-                          quote.total.toStringAsFixed(0),
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1A1A2E),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 5),
+                    _DetailAmountRow(
+                        label: 'Quote', amount: quote.total,
+                        color: const Color(0xFF1A1A2E), fontSize: 18),
+                    const SizedBox(height: 4),
+                    _DetailAmountRow(
+                        label: 'Agreed', amount: quote.agreedTotal,
+                        color: const Color(0xFF43C59E), fontSize: 18),
+                    const SizedBox(height: 6),
                     QuoteStatusBadge(status: quote.status),
                   ],
                 ),
@@ -252,6 +245,41 @@ class QuoteDetailPage extends StatelessWidget {
           const SizedBox(height: 32),
         ],
       ),
+    );
+  }
+}
+
+
+class _DetailAmountRow extends StatelessWidget {
+  final String label;
+  final double amount;
+  final Color color;
+  final double fontSize;
+
+  const _DetailAmountRow({
+    required this.label,
+    required this.amount,
+    required this.color,
+    required this.fontSize,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$label: ',
+            style: TextStyle(fontSize: fontSize - 4, color: Colors.grey[500])),
+        Icon(Icons.currency_pound, size: fontSize - 6, color: color),
+        Text(
+          amount.toStringAsFixed(0),
+          style: TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
     );
   }
 }

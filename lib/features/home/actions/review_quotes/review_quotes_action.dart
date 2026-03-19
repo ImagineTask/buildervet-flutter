@@ -9,7 +9,7 @@ class ReviewQuotesAction extends BaseActionTile {
   IconData get icon => Icons.request_quote_outlined;
 
   @override
-  String get label => 'Review\nQuotes';
+  String get label => 'Quotes';
 
   @override
   Color get color => const Color(0xFF43C59E);
