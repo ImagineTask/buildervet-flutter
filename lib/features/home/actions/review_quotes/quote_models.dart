@@ -1,107 +1,93 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BreakdownItem — one task line inside a quote
+// ProjectQuote
+//
+// Represents the overall quote for a project, derived from all task documents.
+// Each task stores its own quote fields (quoteMaterial, quoteLabour, etc.).
+// The overall status is stored consistently across all tasks.
 // ─────────────────────────────────────────────────────────────────────────────
 
-class BreakdownItem {
-  final String taskId;
-  final String taskName;
-  final double amount;
-  final String description;
-
-  const BreakdownItem({
-    required this.taskId,
-    required this.taskName,
-    required this.amount,
-    required this.description,
-  });
-
-  factory BreakdownItem.fromMap(Map<String, dynamic> m) => BreakdownItem(
-        taskId: m['taskId'] ?? '',
-        taskName: m['taskName'] ?? '',
-        amount: (m['amount'] ?? 0).toDouble(),
-        description: m['description'] ?? '',
-      );
-
-  Map<String, dynamic> toMap() => {
-        'taskId': taskId,
-        'taskName': taskName,
-        'amount': amount,
-        'description': description,
-      };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// QuoteModel — one quote per builder per project
-// quotes/{quoteId}
-// ─────────────────────────────────────────────────────────────────────────────
-
-class QuoteModel {
-  final String id;
-  final String projectId;
+class ProjectQuote {
   final String builderId;
   final String builderName;
-  final double totalAmount;
+  final double totalMaterial;
+  final double totalLabour;
   final String status; // pending | accepted | declined
-  final DateTime createdAt;
-  final List<BreakdownItem> breakdown;
+  final DateTime submittedAt;
 
-  const QuoteModel({
-    required this.id,
-    required this.projectId,
+  double get total => totalMaterial + totalLabour;
+
+  const ProjectQuote({
     required this.builderId,
     required this.builderName,
-    required this.totalAmount,
+    required this.totalMaterial,
+    required this.totalLabour,
     required this.status,
-    required this.createdAt,
-    required this.breakdown,
+    required this.submittedAt,
   });
 
-  factory QuoteModel.fromFirestore(DocumentSnapshot doc) {
-    final d = doc.data() as Map<String, dynamic>;
-    final raw = d['breakdown'] as List<dynamic>? ?? [];
-    return QuoteModel(
-      id: doc.id,
-      projectId: d['projectId'] ?? '',
-      builderId: d['builderId'] ?? '',
-      builderName: d['builderName'] ?? 'Unknown Builder',
-      totalAmount: (d['totalAmount'] ?? 0).toDouble(),
-      status: d['status'] ?? 'pending',
-      createdAt: _parseDate(d['createdAt']),
-      breakdown: raw
-          .map((e) => BreakdownItem.fromMap(e as Map<String, dynamic>))
-          .toList(),
-    );
-  }
+  /// Derives one ProjectQuote from all task documents.
+  /// Returns null if no tasks have a quote yet.
+  static ProjectQuote? fromTasks(List<TaskItem> tasks) {
+    final quoted = tasks.where((t) => t.hasQuote).toList();
+    if (quoted.isEmpty) return null;
 
-  static DateTime _parseDate(dynamic v) {
-    if (v == null) return DateTime.now();
-    if (v is Timestamp) return v.toDate();
-    if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
-    return DateTime.now();
+    final first = quoted.first;
+    final totalMaterial =
+        quoted.fold<double>(0, (s, t) => s + (t.quoteMaterial ?? 0));
+    final totalLabour =
+        quoted.fold<double>(0, (s, t) => s + (t.quoteLabour ?? 0));
+
+    return ProjectQuote(
+      builderId: first.quoteBuilderId ?? '',
+      builderName: first.quoteBuilderName ?? 'Unknown Builder',
+      totalMaterial: totalMaterial,
+      totalLabour: totalLabour,
+      status: first.quoteStatus ?? 'pending',
+      submittedAt: first.quoteSubmittedAt ?? DateTime.now(),
+    );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TaskItem — a task document under a project (used in CreateQuotePage)
+// TaskItem — a task document with optional quote fields
 // ─────────────────────────────────────────────────────────────────────────────
 
 class TaskItem {
   final String taskId;
   final String taskName;
   final String contractorType;
+  final double? guidePrice;
   final double? guidePriceMin;
   final double? guidePriceMax;
   final int taskOrder;
+
+  // Quote fields — null until a quote is submitted
+  final String? quoteBuilderId;
+  final String? quoteBuilderName;
+  final double? quoteMaterial;
+  final double? quoteLabour;
+  final String? quoteStatus;
+  final DateTime? quoteSubmittedAt;
+
+  bool get hasQuote => quoteBuilderId != null;
+  double get quoteTotal => (quoteMaterial ?? 0) + (quoteLabour ?? 0);
 
   const TaskItem({
     required this.taskId,
     required this.taskName,
     required this.contractorType,
+    required this.guidePrice,
     required this.guidePriceMin,
     required this.guidePriceMax,
     required this.taskOrder,
+    this.quoteBuilderId,
+    this.quoteBuilderName,
+    this.quoteMaterial,
+    this.quoteLabour,
+    this.quoteStatus,
+    this.quoteSubmittedAt,
   });
 
   factory TaskItem.fromFirestore(DocumentSnapshot doc) {
@@ -111,9 +97,23 @@ class TaskItem {
       taskId: doc.id,
       taskName: d['taskName'] ?? 'Unnamed Task',
       contractorType: d['contractorType'] ?? '',
+      guidePrice: (d['guidePrice'])?.toDouble(),
       guidePriceMin: (d['guidePriceMin'])?.toDouble(),
       guidePriceMax: (d['guidePriceMax'])?.toDouble(),
       taskOrder: (meta['taskOrder'] as int?) ?? 0,
+      quoteBuilderId: d['quoteBuilderId'],
+      quoteBuilderName: d['quoteBuilderName'],
+      quoteMaterial: (d['quoteMaterial'])?.toDouble(),
+      quoteLabour: (d['quoteLabour'])?.toDouble(),
+      quoteStatus: d['quoteStatus'],
+      quoteSubmittedAt: _parseDate(d['quoteSubmittedAt']),
     );
+  }
+
+  static DateTime? _parseDate(dynamic v) {
+    if (v == null) return null;
+    if (v is Timestamp) return v.toDate();
+    if (v is String) return DateTime.tryParse(v);
+    return null;
   }
 }

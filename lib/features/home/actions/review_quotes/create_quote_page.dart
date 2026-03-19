@@ -6,21 +6,22 @@ import 'quote_models.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // CreateQuotePage
 //
-// Fetches all tasks under the project.
-// Contractor fills a price + optional notes per task.
-// Live total updates as they type.
-// On submit → writes one quote document to quotes/{quoteId} with a
-// breakdown array containing every task's amount.
+// Builder fills in material + labour per task.
+// On Send → batch writes quote fields to all tasks/{taskId} documents.
+// First quote  → labour defaults to guidePrice, material to 0
+// Update quote → pre-fills from existing quoteMaterial / quoteLabour
 // ─────────────────────────────────────────────────────────────────────────────
 
 class CreateQuotePage extends StatefulWidget {
   final String projectId;
   final String projectName;
+  final List<TaskItem>? existingTasks; // non-null when updating
 
   const CreateQuotePage({
     super.key,
     required this.projectId,
     required this.projectName,
+    this.existingTasks,
   });
 
   @override
@@ -28,8 +29,8 @@ class CreateQuotePage extends StatefulWidget {
 }
 
 class _CreateQuotePageState extends State<CreateQuotePage> {
-  final Map<String, TextEditingController> _amountControllers = {};
-  final Map<String, TextEditingController> _descControllers = {};
+  final Map<String, TextEditingController> _materialControllers = {};
+  final Map<String, TextEditingController> _labourControllers = {};
   final _formKey = GlobalKey<FormState>();
   bool _loading = false;
   bool _tasksLoading = true;
@@ -55,10 +56,20 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
       ..sort((a, b) => a.taskOrder.compareTo(b.taskOrder));
 
     for (final task in tasks) {
-      final ac = TextEditingController();
-      ac.addListener(_recalcTotal);
-      _amountControllers[task.taskId] = ac;
-      _descControllers[task.taskId] = TextEditingController();
+      // Pre-fill from existing quote or default to guidePrice/0
+      final existingMaterial =
+          task.quoteMaterial?.toStringAsFixed(0) ?? '0';
+      final existingLabour = task.quoteLabour?.toStringAsFixed(0) ??
+          (task.guidePrice != null && task.guidePrice! > 0
+              ? task.guidePrice!.toStringAsFixed(0)
+              : '0');
+
+      final mc = TextEditingController(text: existingMaterial);
+      final lc = TextEditingController(text: existingLabour);
+      mc.addListener(_recalcTotal);
+      lc.addListener(_recalcTotal);
+      _materialControllers[task.taskId] = mc;
+      _labourControllers[task.taskId] = lc;
     }
 
     if (mounted) {
@@ -66,25 +77,29 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
         _tasks = tasks;
         _tasksLoading = false;
       });
+      _recalcTotal();
     }
   }
 
   @override
   void dispose() {
-    for (final c in _amountControllers.values) c.dispose();
-    for (final c in _descControllers.values) c.dispose();
+    for (final c in _materialControllers.values) c.dispose();
+    for (final c in _labourControllers.values) c.dispose();
     super.dispose();
   }
 
   void _recalcTotal() {
     double sum = 0;
-    for (final c in _amountControllers.values) {
+    for (final c in _materialControllers.values) {
+      sum += double.tryParse(c.text.trim()) ?? 0;
+    }
+    for (final c in _labourControllers.values) {
       sum += double.tryParse(c.text.trim()) ?? 0;
     }
     setState(() => _total = sum);
   }
 
-  Future<void> _submit(List<TaskItem> tasks) async {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
     final user = FirebaseAuth.instance.currentUser;
@@ -99,31 +114,33 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
 
     setState(() => _loading = true);
     try {
-      final breakdown = tasks
-          .map((task) => BreakdownItem(
-                taskId: task.taskId,
-                taskName: task.taskName,
-                amount: double.tryParse(
-                        _amountControllers[task.taskId]!.text.trim()) ??
-                    0,
-                description: _descControllers[task.taskId]!.text.trim(),
-              ).toMap())
-          .toList();
-
-      await FirebaseFirestore.instance.collection('quotes').add({
-        'projectId': widget.projectId,
-        'builderId': user.uid,
-        'builderName': builderName,
-        'totalAmount': _total,
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-        'breakdown': breakdown,
-      });
+      final batch = FirebaseFirestore.instance.batch();
+      for (final task in _tasks) {
+        final material = double.tryParse(
+                _materialControllers[task.taskId]!.text.trim()) ??
+            0;
+        final labour = double.tryParse(
+                _labourControllers[task.taskId]!.text.trim()) ??
+            0;
+        final ref = FirebaseFirestore.instance
+            .collection('tasks')
+            .doc(task.taskId);
+        batch.update(ref, {
+          'quoteBuilderId': user.uid,
+          'quoteBuilderName': builderName,
+          'quoteMaterial': material,
+          'quoteLabour': labour,
+          'quoteTotal': material + labour,
+          'quoteStatus': 'pending',
+          'quoteSubmittedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Quote submitted successfully'),
+            content: Text('Quote sent successfully'),
             backgroundColor: Color(0xFF43C59E),
           ),
         );
@@ -133,7 +150,7 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to submit quote. Try again.'),
+            content: Text('Failed to send quote. Try again.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -164,12 +181,13 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
           // Live total bar
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 14),
             child: Row(
               children: [
                 const Expanded(
                   child: Text(
-                    'Enter your price for each task',
+                    'Enter material & labour per task',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
@@ -190,7 +208,8 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
                     ),
                     Text(
                       'Total',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.grey[400]),
                     ),
                   ],
                 ),
@@ -206,19 +225,21 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
               itemBuilder: (context, index) {
                 if (index == _tasks.length) {
                   return Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 24),
-                    child: _SubmitButton(
+                    padding:
+                        const EdgeInsets.only(top: 8, bottom: 24),
+                    child: _SendButton(
                       total: _total,
                       loading: _loading,
-                      onTap: () => _submit(_tasks),
+                      onTap: _submit,
                     ),
                   );
                 }
                 final task = _tasks[index];
                 return _TaskInputCard(
                   task: task,
-                  amountController: _amountControllers[task.taskId]!,
-                  descController: _descControllers[task.taskId]!,
+                  materialController:
+                      _materialControllers[task.taskId]!,
+                  labourController: _labourControllers[task.taskId]!,
                 );
               },
             ),
@@ -238,7 +259,8 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
           children: [
             Text(
               widget.projectName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const Text(
               'Create Quote',
@@ -261,13 +283,13 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
 
 class _TaskInputCard extends StatelessWidget {
   final TaskItem task;
-  final TextEditingController amountController;
-  final TextEditingController descController;
+  final TextEditingController materialController;
+  final TextEditingController labourController;
 
   const _TaskInputCard({
     required this.task,
-    required this.amountController,
-    required this.descController,
+    required this.materialController,
+    required this.labourController,
   });
 
   @override
@@ -296,7 +318,8 @@ class _TaskInputCard extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF43C59E).withValues(alpha: 0.1),
+                    color:
+                        const Color(0xFF43C59E).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.build_outlined,
@@ -338,31 +361,44 @@ class _TaskInputCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: amountController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: _inputDecoration(
-                  label: 'Your price (£)', icon: Icons.currency_pound),
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) {
-                  return 'Enter a price for this task';
-                }
-                if (double.tryParse(v.trim()) == null) {
-                  return 'Enter a valid number';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: descController,
-              maxLines: 2,
-              decoration: _inputDecoration(
-                label: 'Notes (optional)',
-                icon: Icons.notes_outlined,
-                multiline: true,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: materialController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: _inputDecoration(
+                        label: 'Material (£)',
+                        icon: Icons.hardware_outlined),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Required';
+                      if (double.tryParse(v.trim()) == null) {
+                        return 'Invalid';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: TextFormField(
+                    controller: labourController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true),
+                    decoration: _inputDecoration(
+                        label: 'Labour (£)',
+                        icon: Icons.handyman_outlined),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Required';
+                      if (double.tryParse(v.trim()) == null) {
+                        return 'Invalid';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -372,15 +408,15 @@ class _TaskInputCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Submit Button — shows live total inline
+// Send Button
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _SubmitButton extends StatelessWidget {
+class _SendButton extends StatelessWidget {
   final double total;
   final bool loading;
   final VoidCallback onTap;
 
-  const _SubmitButton({
+  const _SendButton({
     required this.total,
     required this.loading,
     required this.onTap,
@@ -414,7 +450,7 @@ class _SubmitButton extends StatelessWidget {
                         color: Colors.white, size: 18),
                     const SizedBox(width: 8),
                     Text(
-                      'Submit Quote  •  £${total.toStringAsFixed(0)}',
+                      'Send  •  £${total.toStringAsFixed(0)}',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.bold,
@@ -429,24 +465,13 @@ class _SubmitButton extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Input decoration helper
-// ─────────────────────────────────────────────────────────────────────────────
-
 InputDecoration _inputDecoration({
   required String label,
   required IconData icon,
-  bool multiline = false,
 }) {
   return InputDecoration(
     labelText: label,
-    alignLabelWithHint: multiline,
-    prefixIcon: multiline
-        ? Padding(
-            padding: const EdgeInsets.only(bottom: 32),
-            child: Icon(icon, size: 16, color: const Color(0xFF43C59E)),
-          )
-        : Icon(icon, size: 16, color: const Color(0xFF43C59E)),
+    prefixIcon: Icon(icon, size: 16, color: const Color(0xFF43C59E)),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(10),
       borderSide: const BorderSide(color: Color(0xFFE0E0E0)),

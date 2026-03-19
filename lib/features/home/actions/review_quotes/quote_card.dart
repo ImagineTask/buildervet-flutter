@@ -7,78 +7,81 @@ import 'create_quote_page.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // QuoteCard
 //
-// High-level card shown on QuoteManagementPage.
-// One card per builder quote — shows builder name, task count, total, status.
-// Tap → QuoteDetailPage (full breakdown + approve/decline).
+// One card for the entire project quote.
+// Shows: builder name, total amount, status.
+// Builder  → Send Quote + Update Quote
+// Homeowner → Approve + Decline (updates all tasks in batch)
+// Tap card  → QuoteDetailPage (breakdown per task)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class QuoteCard extends StatelessWidget {
-  final QuoteModel quote;
-  final String currentUid;
-  final String ownerId;
+  final ProjectQuote quote;
+  final List<TaskItem> tasks;
   final String role;
+  final String projectId;
+  final String projectName;
 
   const QuoteCard({
     super.key,
     required this.quote,
-    required this.currentUid,
-    required this.ownerId,
+    required this.tasks,
     required this.role,
+    required this.projectId,
+    required this.projectName,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isPending = quote.status == 'pending';
-    final isOwner = role.toLowerCase() == 'homeowner';
     final isBuilder = role.toLowerCase() == 'builder';
+    final isPending = quote.status == 'pending';
 
-    return GestureDetector(
-      onTap: isOwner && !isBuilder
-          ? () => Navigator.push(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: isPending
+            ? Border.all(color: const Color(0xFFFFB347), width: 1.5)
+            : null,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Top row — tap to see breakdown ────────────────────────
+            GestureDetector(
+              onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => QuoteDetailPage(
+                    tasks: tasks,
                     quote: quote,
                     role: role,
+                    projectId: projectId,
                   ),
                 ),
-              )
-          : null,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: isPending
-              ? Border.all(color: const Color(0xFFFFB347), width: 1.5)
-              : null,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Top row: avatar + info + amount ──────────────────────
-              Row(
+              ),
+              child: Row(
                 children: [
                   Container(
                     width: 46,
                     height: 46,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF43C59E).withValues(alpha: 0.1),
+                      color:
+                          const Color(0xFF43C59E).withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.person_outline,
                         size: 24, color: Color(0xFF43C59E)),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -91,23 +94,14 @@ class QuoteCard extends StatelessWidget {
                             color: Color(0xFF1A1A2E),
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 3),
                         Row(
                           children: [
                             Icon(Icons.list_alt_outlined,
                                 size: 12, color: Colors.grey[400]),
                             const SizedBox(width: 4),
                             Text(
-                              '${quote.breakdown.length} task${quote.breakdown.length == 1 ? '' : 's'}',
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey[500]),
-                            ),
-                            const SizedBox(width: 10),
-                            Icon(Icons.schedule_outlined,
-                                size: 12, color: Colors.grey[400]),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${quote.createdAt.day}/${quote.createdAt.month}/${quote.createdAt.year}',
+                              '${tasks.length} tasks  •  ${quote.submittedAt.day}/${quote.submittedAt.month}/${quote.submittedAt.year}',
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey[500]),
                             ),
@@ -124,7 +118,7 @@ class QuoteCard extends StatelessWidget {
                           Icon(Icons.currency_pound,
                               size: 13, color: Colors.grey[400]),
                           Text(
-                            quote.totalAmount.toStringAsFixed(0),
+                            quote.total.toStringAsFixed(0),
                             style: const TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -133,98 +127,110 @@ class QuoteCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 5),
                       QuoteStatusBadge(status: quote.status),
                     ],
                   ),
-                  if (isOwner && !isBuilder) ...[
-                    const SizedBox(width: 6),
-                    Icon(Icons.chevron_right,
-                        color: Colors.grey[300], size: 20),
-                  ],
+                  const SizedBox(width: 6),
+                  Icon(Icons.chevron_right,
+                      color: Colors.grey[300], size: 20),
                 ],
               ),
+            ),
 
-              // ── Action buttons — always shown ─────────────────────
-              const SizedBox(height: 12),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              if (role.toLowerCase() == 'builder')
-                GestureDetector(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CreateQuotePage(
-                        projectId: quote.projectId,
-                        projectName: '',
+            // ── Action buttons ─────────────────────────────────────────
+            const SizedBox(height: 14),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+
+            if (isBuilder)
+              Row(
+                children: [
+                  Expanded(
+                    child: _CardButton(
+                      label: 'Send Quote',
+                      icon: Icons.send_rounded,
+                      filled: true,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CreateQuotePage(
+                            projectId: projectId,
+                            projectName: projectName,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: const Color(0xFF43C59E).withValues(alpha: 0.4)),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.edit_outlined,
-                            size: 15, color: Color(0xFF43C59E)),
-                        SizedBox(width: 6),
-                        Text(
-                          'Update Quote',
-                          style: TextStyle(
-                            color: Color(0xFF43C59E),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _CardButton(
+                      label: 'Update',
+                      icon: Icons.edit_outlined,
+                      filled: false,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => CreateQuotePage(
+                            projectId: projectId,
+                            projectName: projectName,
+                            existingTasks: tasks,
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                )
-              else
-                _QuoteCardActions(quote: quote),
-            ],
-          ),
+                ],
+              )
+            else
+              _HomeownerActions(
+                tasks: tasks,
+                quote: quote,
+              ),
+          ],
         ),
       ),
     );
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
-// _QuoteCardActions — inline Approve / Decline for homeowner on the card
+// _HomeownerActions — Approve + Decline, batch updates all tasks
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _QuoteCardActions extends StatefulWidget {
-  final QuoteModel quote;
+class _HomeownerActions extends StatefulWidget {
+  final List<TaskItem> tasks;
+  final ProjectQuote quote;
 
-  const _QuoteCardActions({required this.quote});
+  const _HomeownerActions({required this.tasks, required this.quote});
 
   @override
-  State<_QuoteCardActions> createState() => _QuoteCardActionsState();
+  State<_HomeownerActions> createState() => _HomeownerActionsState();
 }
 
-class _QuoteCardActionsState extends State<_QuoteCardActions> {
+class _HomeownerActionsState extends State<_HomeownerActions> {
   bool _loadingApprove = false;
   bool _loadingDecline = false;
+
+  Future<void> _updateAll(String status) async {
+    final batch = FirebaseFirestore.instance.batch();
+    for (final task in widget.tasks) {
+      if (!task.hasQuote) continue;
+      final ref = FirebaseFirestore.instance
+          .collection('tasks')
+          .doc(task.taskId);
+      batch.update(ref, {
+        'quoteStatus': status,
+        'quoteResolvedAt': FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
 
   Future<void> _approve() async {
     setState(() => _loadingApprove = true);
     try {
-      await FirebaseFirestore.instance
-          .collection('quotes')
-          .doc(widget.quote.id)
-          .update({
-        'status': 'accepted',
-        'resolvedAt': FieldValue.serverTimestamp(),
-      });
+      await _updateAll('accepted');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -255,7 +261,8 @@ class _QuoteCardActionsState extends State<_QuoteCardActions> {
             borderRadius: BorderRadius.circular(16)),
         title: const Text('Decline Quote',
             style: TextStyle(
-                fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E))),
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A1A2E))),
         content: Text(
           'Decline the quote from ${widget.quote.builderName}?',
           style: const TextStyle(color: Colors.grey),
@@ -278,18 +285,11 @@ class _QuoteCardActionsState extends State<_QuoteCardActions> {
         ],
       ),
     );
-
     if (confirmed != true) return;
 
     setState(() => _loadingDecline = true);
     try {
-      await FirebaseFirestore.instance
-          .collection('quotes')
-          .doc(widget.quote.id)
-          .update({
-        'status': 'declined',
-        'resolvedAt': FieldValue.serverTimestamp(),
-      });
+      await _updateAll('declined');
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -308,93 +308,100 @@ class _QuoteCardActionsState extends State<_QuoteCardActions> {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        // Approve
         Expanded(
-          child: GestureDetector(
-            onTap: _loadingApprove ? null : _approve,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: _loadingApprove
-                    ? const Color(0xFF43C59E).withValues(alpha: 0.5)
-                    : const Color(0xFF43C59E),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: _loadingApprove
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2),
-                      )
-                    : const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.check_rounded,
-                              color: Colors.white, size: 15),
-                          SizedBox(width: 5),
-                          Text(
-                            'Approve',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
+          child: _CardButton(
+            label: 'Approve',
+            icon: Icons.check_rounded,
+            filled: true,
+            loading: _loadingApprove,
+            onTap: _approve,
           ),
         ),
         const SizedBox(width: 10),
-        // Decline
         Expanded(
-          child: GestureDetector(
-            onTap: _loadingDecline ? null : _decline,
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: _loadingDecline
-                    ? const Color(0xFFFF6B6B).withValues(alpha: 0.5)
-                    : const Color(0xFFFF6B6B),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Center(
-                child: _loadingDecline
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2),
-                      )
-                    : const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.close_rounded,
-                              color: Colors.white, size: 15),
-                          SizedBox(width: 5),
-                          Text(
-                            'Decline',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
+          child: _CardButton(
+            label: 'Decline',
+            icon: Icons.close_rounded,
+            filled: true,
+            color: const Color(0xFFFF6B6B),
+            loading: _loadingDecline,
+            onTap: _decline,
           ),
         ),
       ],
     );
   }
 }
+
 // ─────────────────────────────────────────────────────────────────────────────
-// QuoteStatusBadge — reusable status pill
+// _CardButton
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _CardButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool filled;
+  final Color color;
+  final bool loading;
+  final VoidCallback onTap;
+
+  const _CardButton({
+    required this.label,
+    required this.icon,
+    required this.filled,
+    required this.onTap,
+    this.color = const Color(0xFF43C59E),
+    this.loading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: loading ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: filled
+              ? (loading ? color.withValues(alpha: 0.5) : color)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: filled
+              ? null
+              : Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Center(
+          child: loading
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      color: filled ? Colors.white : color,
+                      strokeWidth: 2),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(icon,
+                        color: filled ? Colors.white : color, size: 15),
+                    const SizedBox(width: 5),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: filled ? Colors.white : color,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QuoteStatusBadge
 // ─────────────────────────────────────────────────────────────────────────────
 
 class QuoteStatusBadge extends StatelessWidget {
@@ -440,123 +447,6 @@ class QuoteStatusBadge extends StatelessWidget {
           fontWeight: FontWeight.w600,
           color: _color,
         ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// QuoteSummaryBar — shown at top of list when quotes exist
-// ─────────────────────────────────────────────────────────────────────────────
-
-class QuoteSummaryBar extends StatelessWidget {
-  final List<QuoteModel> quotes;
-
-  const QuoteSummaryBar({super.key, required this.quotes});
-
-  @override
-  Widget build(BuildContext context) {
-    final pending = quotes.where((q) => q.status == 'pending').length;
-    final accepted = quotes.where((q) => q.status == 'accepted').length;
-    final lowest =
-        quotes.map((q) => q.totalAmount).reduce((a, b) => a < b ? a : b);
-    final highest =
-        quotes.map((q) => q.totalAmount).reduce((a, b) => a > b ? a : b);
-
-    return Container(
-      color: Colors.white,
-      padding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          _Chip(
-            label: '${quotes.length} Quote${quotes.length == 1 ? '' : 's'}',
-            color: const Color(0xFF43C59E),
-          ),
-          if (pending > 0) ...[
-            const SizedBox(width: 8),
-            _Chip(
-              label: '$pending Pending',
-              color: const Color(0xFFFFB347),
-              dot: true,
-            ),
-          ],
-          if (accepted > 0) ...[
-            const SizedBox(width: 8),
-            _Chip(
-              label: '$accepted Approved',
-              color: const Color(0xFF43C59E),
-            ),
-          ],
-          const Spacer(),
-          if (quotes.length > 1)
-            Text(
-              '£${lowest.toStringAsFixed(0)}–£${highest.toStringAsFixed(0)}',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[500],
-                fontWeight: FontWeight.w500,
-              ),
-            )
-          else
-            Row(
-              children: [
-                Icon(Icons.currency_pound,
-                    size: 12, color: Colors.grey[400]),
-                Text(
-                  quotes.first.totalAmount.toStringAsFixed(0),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1A1A2E),
-                  ),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool dot;
-
-  const _Chip(
-      {required this.label, required this.color, this.dot = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (dot) ...[
-            Container(
-              width: 6,
-              height: 6,
-              decoration:
-                  BoxDecoration(color: color, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: color,
-            ),
-          ),
-        ],
       ),
     );
   }

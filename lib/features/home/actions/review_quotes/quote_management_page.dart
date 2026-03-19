@@ -8,21 +8,19 @@ import 'create_quote_page.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 // QuoteManagementPage
 //
-// Button logic is based on uid vs ownerId — not role:
-//   currentUid == ownerId  → project owner → sees Approve / Decline on cards
-//   currentUid != ownerId  → builder       → sees Send / Update Quote
+// Shows ONE quote card for the whole project.
+// The card is derived from all tasks that have quote fields set.
+// Empty state shows "Create a Quote" for builders, waiting message for owners.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class QuoteManagementPage extends StatelessWidget {
   final String projectId;
   final String projectName;
-  final String ownerId;
 
   const QuoteManagementPage({
     super.key,
     required this.projectId,
     required this.projectName,
-    required this.ownerId,
   });
 
   Future<String> _fetchRole() async {
@@ -70,46 +68,43 @@ class QuoteManagementPage extends StatelessWidget {
 
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
-                .collection('quotes')
-                .where('projectId', isEqualTo: projectId)
+                .collection('tasks')
+                .where('parentTaskId', isEqualTo: projectId)
+                .where('taskType', isEqualTo: 'task')
                 .snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(
-                  child: CircularProgressIndicator(color: Color(0xFF43C59E)),
+                  child: CircularProgressIndicator(
+                      color: Color(0xFF43C59E)),
                 );
               }
 
-              final allQuotes = (snapshot.data?.docs ?? [])
-                  .map((d) => QuoteModel.fromFirestore(d))
+              final allTasks = (snapshot.data?.docs ?? [])
+                  .map((d) => TaskItem.fromFirestore(d))
                   .toList()
-                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                ..sort((a, b) => a.taskOrder.compareTo(b.taskOrder));
 
-              if (allQuotes.isEmpty) {
+              // Derive one overall quote from all tasks
+              final projectQuote = ProjectQuote.fromTasks(allTasks);
+
+              if (projectQuote == null) {
                 return _EmptyState(
-                  isOwner: role.toLowerCase() == 'homeowner',
+                  role: role,
                   projectId: projectId,
                   projectName: projectName,
                 );
               }
 
-              return Column(
-                children: [
-                  QuoteSummaryBar(quotes: allQuotes),
-                  const Divider(height: 1),
-                  Expanded(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: allQuotes.length,
-                      itemBuilder: (context, index) => QuoteCard(
-                        quote: allQuotes[index],
-                        currentUid: FirebaseAuth.instance.currentUser?.uid ?? '',
-                        ownerId: ownerId,
-                        role: role,
-                      ),
-                    ),
-                  ),
-                ],
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: QuoteCard(
+                  quote: projectQuote,
+                  tasks: allTasks,
+                  role: role,
+                  projectId: projectId,
+                  projectName: projectName,
+                ),
               );
             },
           );
@@ -124,18 +119,20 @@ class QuoteManagementPage extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
-  final bool isOwner;
+  final String role;
   final String projectId;
   final String projectName;
 
   const _EmptyState({
-    required this.isOwner,
+    required this.role,
     required this.projectId,
     required this.projectName,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isBuilder = role.toLowerCase() == 'builder';
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -157,7 +154,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             Text(
-              isOwner ? 'Awaiting quotes' : 'No quote yet',
+              isBuilder ? 'No quote yet' : 'Awaiting quotes',
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -166,14 +163,14 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              isOwner
-                  ? 'Builders will submit quotes for your project here.'
-                  : 'Submit a quote for this project to get started.',
+              isBuilder
+                  ? 'Submit a quote for this project to get started.'
+                  : 'Builders will submit quotes for your project here.',
               style: TextStyle(fontSize: 13, color: Colors.grey[500]),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 28),
-            if (!isOwner)
+            if (isBuilder) ...[
+              const SizedBox(height: 28),
               GestureDetector(
                 onTap: () => Navigator.push(
                   context,
@@ -209,6 +206,7 @@ class _EmptyState extends StatelessWidget {
                   ),
                 ),
               ),
+            ],
           ],
         ),
       ),
