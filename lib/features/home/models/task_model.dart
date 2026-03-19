@@ -23,6 +23,25 @@ class TaskModel {
   final DateTime updatedAt;
   final Map<String, dynamic> metadata;
 
+  // ── Quote fields (null until a builder submits a quote) ──────────────────
+  final String? quoteBuilderId;
+  final String? quoteBuilderName;
+  final double? quoteMaterial;
+  final double? quoteLabour;
+  final double? quoteTotal;
+  final String? quoteStatus;
+  final DateTime? quoteSubmittedAt;
+
+  // ── Agreed fields (null until homeowner approves) ────────────────────────
+  final double? agreedMaterial;
+  final double? agreedLabour;
+  final double? agreedTotal;
+  final DateTime? agreedAt;
+  final String? quoteDeclineReason;
+
+  bool get hasQuote => quoteBuilderId != null;
+  bool get hasAgreedPrice => agreedTotal != null;
+
   TaskModel({
     required this.id,
     required this.taskId,
@@ -45,6 +64,18 @@ class TaskModel {
     required this.createdAt,
     required this.updatedAt,
     required this.metadata,
+    this.quoteBuilderId,
+    this.quoteBuilderName,
+    this.quoteMaterial,
+    this.quoteLabour,
+    this.quoteTotal,
+    this.quoteStatus,
+    this.quoteSubmittedAt,
+    this.agreedMaterial,
+    this.agreedLabour,
+    this.agreedTotal,
+    this.agreedAt,
+    this.quoteDeclineReason,
   });
 
   bool get isProject => taskType == 'project';
@@ -72,6 +103,18 @@ class TaskModel {
     DateTime? createdAt,
     DateTime? updatedAt,
     Map<String, dynamic>? metadata,
+    String? quoteBuilderId,
+    String? quoteBuilderName,
+    double? quoteMaterial,
+    double? quoteLabour,
+    double? quoteTotal,
+    String? quoteStatus,
+    DateTime? quoteSubmittedAt,
+    double? agreedMaterial,
+    double? agreedLabour,
+    double? agreedTotal,
+    DateTime? agreedAt,
+    String? quoteDeclineReason,
   }) {
     return TaskModel(
       id: id ?? this.id,
@@ -95,6 +138,18 @@ class TaskModel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       metadata: metadata ?? this.metadata,
+      quoteBuilderId: quoteBuilderId ?? this.quoteBuilderId,
+      quoteBuilderName: quoteBuilderName ?? this.quoteBuilderName,
+      quoteMaterial: quoteMaterial ?? this.quoteMaterial,
+      quoteLabour: quoteLabour ?? this.quoteLabour,
+      quoteTotal: quoteTotal ?? this.quoteTotal,
+      quoteStatus: quoteStatus ?? this.quoteStatus,
+      quoteSubmittedAt: quoteSubmittedAt ?? this.quoteSubmittedAt,
+      agreedMaterial: agreedMaterial ?? this.agreedMaterial,
+      agreedLabour: agreedLabour ?? this.agreedLabour,
+      agreedTotal: agreedTotal ?? this.agreedTotal,
+      agreedAt: agreedAt ?? this.agreedAt,
+      quoteDeclineReason: quoteDeclineReason ?? this.quoteDeclineReason,
     );
   }
 
@@ -123,6 +178,18 @@ class TaskModel {
       createdAt: _parseDate(d['createdAt']),
       updatedAt: _parseDate(d['updatedAt']),
       metadata: Map<String, dynamic>.from(d['metadata'] ?? {}),
+      quoteBuilderId: d['quoteBuilderId'],
+      quoteBuilderName: d['quoteBuilderName'],
+      quoteMaterial: (d['quoteMaterial'])?.toDouble(),
+      quoteLabour: (d['quoteLabour'])?.toDouble(),
+      quoteTotal: (d['quoteTotal'])?.toDouble(),
+      quoteStatus: d['quoteStatus'],
+      quoteSubmittedAt: _parseDateNullable(d['quoteSubmittedAt']),
+      agreedMaterial: (d['agreedMaterial'])?.toDouble(),
+      agreedLabour: (d['agreedLabour'])?.toDouble(),
+      agreedTotal: (d['agreedTotal'])?.toDouble(),
+      agreedAt: _parseDateNullable(d['agreedAt']),
+      quoteDeclineReason: d['quoteDeclineReason'],
     );
   }
 
@@ -131,5 +198,12 @@ class TaskModel {
     if (value is Timestamp) return value.toDate();
     if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
     return DateTime.now();
+  }
+
+  static DateTime? _parseDateNullable(dynamic value) {
+    if (value == null) return null;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 }

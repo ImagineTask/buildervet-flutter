@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/task_model.dart';
-import '../schedule_work/task_schedule_detail_page.dart';
 import 'task_detail_page.dart';
 
 class OwnerTaskCard extends StatefulWidget {
@@ -260,11 +259,13 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
 
   @override
   Widget build(BuildContext context) {
+    final task = widget.task;
+
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => TaskDetailPage(task: widget.task),
+          builder: (_) => TaskDetailPage(task: task),
         ),
       ),
       child: Container(
@@ -305,7 +306,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          widget.task.taskName,
+                          task.taskName,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
@@ -334,13 +335,13 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                   const SizedBox(height: 10),
 
                   // Contractor type
-                  if (widget.task.contractorType != null)
+                  if (task.contractorType != null)
                     Row(
                       children: [
                         Icon(Icons.work_outline,
                             size: 13, color: Colors.grey[400]),
                         const SizedBox(width: 6),
-                        Text(widget.task.contractorType!,
+                        Text(task.contractorType!,
                             style: TextStyle(
                                 fontSize: 12, color: Colors.grey[500])),
                       ],
@@ -353,9 +354,9 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                       Icon(Icons.person_outline,
                           size: 13, color: Colors.grey[400]),
                       const SizedBox(width: 6),
-                      widget.task.assignedBuilderIds.isNotEmpty
+                      task.assignedBuilderIds.isNotEmpty
                           ? Text(
-                              '${widget.task.assignedBuilderIds.length} builder(s) assigned',
+                              '${task.assignedBuilderIds.length} builder(s) assigned',
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey[500]),
                             )
@@ -387,26 +388,72 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                   ),
                   const SizedBox(height: 6),
 
-                  // Fee
+                  // Guide price range
                   Row(
                     children: [
                       Icon(Icons.currency_pound,
                           size: 13, color: Colors.grey[400]),
                       const SizedBox(width: 6),
                       Text(
-                        '£${widget.task.guidePrice.toStringAsFixed(0)}',
+                        'Guide: £${task.guidePriceMin.toStringAsFixed(0)} – £${task.guidePriceMax.toStringAsFixed(0)}',
                         style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[500],
-                            fontWeight: FontWeight.w600),
-                      ),
-                      Text(
-                        ' (£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)} guide)',
-                        style: TextStyle(
-                            fontSize: 11, color: Colors.grey[400]),
+                            fontSize: 12, color: Colors.grey[400]),
                       ),
                     ],
                   ),
+
+                  // ── Quote & Agreed prices ──────────────────────────────
+                  if (task.hasQuote) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Icon(Icons.request_quote_outlined,
+                            size: 13, color: Colors.grey[400]),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Quote: £${(task.quoteTotal ?? 0).toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: (task.agreedTotal != null &&
+                                    task.agreedTotal! > 0 &&
+                                    task.quoteTotal != task.agreedTotal)
+                                ? const Color(0xFFFF6B6B)
+                                : Colors.grey[500],
+                            fontWeight: (task.agreedTotal != null &&
+                                    task.agreedTotal! > 0 &&
+                                    task.quoteTotal != task.agreedTotal)
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Icon(Icons.check_circle_outline,
+                            size: 13, color: const Color(0xFF43C59E)),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Agreed: £${(task.agreedTotal ?? 0).toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: (task.agreedTotal != null &&
+                                    task.agreedTotal! > 0 &&
+                                    task.quoteTotal != task.agreedTotal)
+                                ? const Color(0xFFFF6B6B)
+                                : const Color(0xFF43C59E),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    // Quote status badge
+                    if (task.quoteStatus != null) ...[
+                      const SizedBox(height: 6),
+                      _QuoteStatusRow(
+                        status: task.quoteStatus!,
+                        declineReason: task.quoteDeclineReason,
+                      ),
+                    ],
+                  ],
                 ],
               ),
             ),
@@ -458,7 +505,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                           child: _negotiationFeeBox(
                             label: 'Current Fee',
                             amount:
-                                '£${(_negotiation['currentFee'] as num?)?.toStringAsFixed(0) ?? widget.task.guidePrice.toStringAsFixed(0)}',
+                                '£${(_negotiation['currentFee'] as num?)?.toStringAsFixed(0) ?? task.guidePrice.toStringAsFixed(0)}',
                             color: Colors.grey,
                           ),
                         ),
@@ -509,7 +556,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     // Action buttons
                     Row(
                       children: [
-                        // Accept
                         Expanded(
                           child: GestureDetector(
                             onTap: () => _acceptNegotiation(context),
@@ -537,8 +583,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                           ),
                         ),
                         const SizedBox(width: 8),
-
-                        // Counter
                         Expanded(
                           child: GestureDetector(
                             onTap: () => _counterOffer(context),
@@ -566,8 +610,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                           ),
                         ),
                         const SizedBox(width: 8),
-
-                        // Decline
                         Expanded(
                           child: GestureDetector(
                             onTap: () => _declineNegotiation(context),
@@ -647,5 +689,124 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
     } catch (_) {
       return '';
     }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _PriceColumn — label + amount stacked vertically
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PriceColumn extends StatelessWidget {
+  final String label;
+  final double amount;
+  final Color color;
+
+  const _PriceColumn({
+    required this.label,
+    required this.amount,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+        ),
+        const SizedBox(height: 2),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.currency_pound, size: 10, color: color),
+            Text(
+              amount.toStringAsFixed(0),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _QuoteStatusRow — shows quote status + decline reason if any
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _QuoteStatusRow extends StatelessWidget {
+  final String status;
+  final String? declineReason;
+
+  const _QuoteStatusRow({required this.status, this.declineReason});
+
+  Color get _color {
+    switch (status) {
+      case 'accepted':
+        return const Color(0xFF43C59E);
+      case 'declined':
+        return const Color(0xFFFF6B6B);
+      default:
+        return const Color(0xFFFFB347);
+    }
+  }
+
+  String get _label {
+    switch (status) {
+      case 'accepted':
+        return 'Quote Approved';
+      case 'declined':
+        return 'Quote Declined';
+      default:
+        return 'Quote Pending';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.circle, size: 8, color: _color),
+            const SizedBox(width: 6),
+            Text(
+              _label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: _color,
+              ),
+            ),
+          ],
+        ),
+        if (status == 'declined' &&
+            declineReason != null &&
+            declineReason!.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.message_outlined,
+                  size: 11, color: Colors.grey[400]),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  declineReason!,
+                  style:
+                      TextStyle(fontSize: 11, color: Colors.grey[500]),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 }

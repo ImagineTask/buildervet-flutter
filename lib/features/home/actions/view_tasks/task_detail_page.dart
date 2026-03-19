@@ -18,20 +18,15 @@ class TaskDetailPage extends StatefulWidget {
 
 class _TaskDetailPageState extends State<TaskDetailPage>
     with TickerProviderStateMixin {
-  // ── Controllers ─────────────────────────────────────────────────────────
-  late TextEditingController _priceController;
   late TextEditingController _descriptionController;
   late TextEditingController _durationController;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  // ── State ────────────────────────────────────────────────────────────────
   bool _editMode = false;
   bool _isSaving = false;
   DateTime? _editStartDate;
   DateTime? _editEndDate;
-
-  // ── Computed helpers ─────────────────────────────────────────────────────
 
   Color get _statusColor {
     switch (widget.task.status) {
@@ -67,8 +62,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   List<String> get _actionSpace =>
       List<String>.from(widget.task.metadata['actionSpace'] ?? []);
 
-  // ── Format helpers ───────────────────────────────────────────────────────
-
   String _formatDate(String? iso) {
     if (iso == null) return '—';
     try {
@@ -88,13 +81,9 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     } catch (_) { return '—'; }
   }
 
-  // ── Lifecycle ────────────────────────────────────────────────────────────
-
   @override
   void initState() {
     super.initState();
-    _priceController = TextEditingController(
-        text: widget.task.guidePrice.toStringAsFixed(0));
     _descriptionController =
         TextEditingController(text: widget.task.description);
     _durationController = TextEditingController(
@@ -114,19 +103,15 @@ class _TaskDetailPageState extends State<TaskDetailPage>
 
   @override
   void dispose() {
-    _priceController.dispose();
     _descriptionController.dispose();
     _durationController.dispose();
     _fadeController.dispose();
     super.dispose();
   }
 
-  // ── Edit mode ────────────────────────────────────────────────────────────
-
   void _enterEditMode() => setState(() => _editMode = true);
 
   void _cancelEdit() {
-    _priceController.text = widget.task.guidePrice.toStringAsFixed(0);
     _descriptionController.text = widget.task.description;
     _durationController.text =
         (widget.task.metadata['durationDays'] ?? '').toString();
@@ -139,15 +124,10 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     setState(() => _editMode = false);
   }
 
-  // ── Save ─────────────────────────────────────────────────────────────────
-
   Future<void> _saveChanges() async {
-    final fee = double.tryParse(_priceController.text);
-    if (fee == null) { _showSnack('Enter a valid price', isError: true); return; }
     setState(() => _isSaving = true);
     try {
       final updates = <String, dynamic>{
-        'guidePrice':  fee,
         'description': _descriptionController.text.trim(),
         'updatedAt':   FieldValue.serverTimestamp(),
       };
@@ -189,8 +169,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     ));
   }
 
-  // ── Date picker ──────────────────────────────────────────────────────────
-
   Future<void> _pickDate(BuildContext context, {required bool isStart}) async {
     final initial = isStart
         ? (_editStartDate ?? DateTime.now())
@@ -216,8 +194,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     });
   }
 
-  // ── Input decoration ─────────────────────────────────────────────────────
-
   InputDecoration _inputDeco(String hint) => InputDecoration(
     hintText: hint,
     hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
@@ -237,8 +213,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 2),
     ),
   );
-
-  // ── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -282,8 +256,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       floatingActionButton: _buildFab(),
     );
   }
-
-  // ── App Bar ──────────────────────────────────────────────────────────────
 
   SliverAppBar _buildAppBar() {
     return SliverAppBar(
@@ -331,8 +303,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  // ── FAB ──────────────────────────────────────────────────────────────────
-
   Widget _buildFab() {
     if (_editMode) {
       return Padding(
@@ -341,127 +311,123 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           height: 56,
           child: Row(
             children: [
-            // Cancel
-            Expanded(
-              flex: 2,
-              child: GestureDetector(
-                onTap: _cancelEdit,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                        color: const Color(0xFFFF6B6B).withOpacity(0.4)),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4)),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Text('Cancel',
-                        style: TextStyle(
-                            color: Color(0xFFFF6B6B),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15)),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Save & Lock
-            Expanded(
-              flex: 3,
-              child: GestureDetector(
-                onTap: _isSaving ? null : _saveChanges,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6C63FF), Color(0xFF5A52E8)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+              Expanded(
+                flex: 2,
+                child: GestureDetector(
+                  onTap: _cancelEdit,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                          color: const Color(0xFFFF6B6B).withOpacity(0.4)),
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4)),
+                      ],
                     ),
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                          color: const Color(0xFF6C63FF).withOpacity(0.35),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4)),
-                    ],
-                  ),
-                  child: Center(
-                    child: _isSaving
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.lock_outline_rounded,
-                                  color: Colors.white, size: 16),
-                              SizedBox(width: 8),
-                              Text('Save & Lock',
-                                  style: TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15)),
-                            ],
-                          ),
+                    child: const Center(
+                      child: Text('Cancel',
+                          style: TextStyle(
+                              color: Color(0xFFFF6B6B),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15)),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 3,
+                child: GestureDetector(
+                  onTap: _isSaving ? null : _saveChanges,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF6C63FF), Color(0xFF5A52E8)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                            color: const Color(0xFF6C63FF).withOpacity(0.35),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4)),
+                      ],
+                    ),
+                    child: Center(
+                      child: _isSaving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.lock_outline_rounded,
+                                    color: Colors.white, size: 16),
+                                SizedBox(width: 8),
+                                Text('Save & Lock',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15)),
+                              ],
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
+      );
     }
 
-    // View mode — Edit button
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: SizedBox(
         height: 56,
         child: GestureDetector(
-        onTap: _enterEditMode,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF6C63FF).withOpacity(0.3)),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(0.08),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4)),
-            ],
-          ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6C63FF)),
-              SizedBox(width: 8),
-              Text('Edit',
-                  style: TextStyle(
-                      color: Color(0xFF6C63FF),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15)),
-            ],
+          onTap: _enterEditMode,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                  color: const Color(0xFF6C63FF).withOpacity(0.3)),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 16,
+                    offset: const Offset(0, 4)),
+              ],
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.edit_outlined, size: 16, color: Color(0xFF6C63FF)),
+                SizedBox(width: 8),
+                Text('Edit',
+                    style: TextStyle(
+                        color: Color(0xFF6C63FF),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15)),
+              ],
+            ),
           ),
         ),
       ),
-    ),
     );
   }
-
-  // ── 1 · Status banner ────────────────────────────────────────────────────
 
   Widget _buildStatusBanner() {
     final taskOrder = widget.task.metadata['taskOrder'];
@@ -497,8 +463,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           const Spacer(),
           if (taskOrder != null)
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
@@ -515,8 +480,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  // ── 2 · Description ──────────────────────────────────────────────────────
-
   Widget _buildDescriptionSection() {
     return _SectionCard(
       title: 'Description',
@@ -526,8 +489,8 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           ? TextField(
               controller: _descriptionController,
               maxLines: 4,
-              style:
-                  TextStyle(fontSize: 14, color: Colors.grey[700], height: 1.5),
+              style: TextStyle(
+                  fontSize: 14, color: Colors.grey[700], height: 1.5),
               decoration: _inputDeco('Describe the task...'),
             )
           : Text(
@@ -547,7 +510,180 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  // ── 3 · Schedule & Timeline (merged) ────────────────────────────────────
+  // ── Price section — read-only, shows quote + agreed ──────────────────────
+
+  Widget _buildPriceSection() {
+    final hasQuote = widget.task.hasQuote;
+    final quoteTotal = widget.task.quoteTotal ?? 0;
+    final agreedTotal = widget.task.agreedTotal ?? 0;
+    final isNewQuote =
+        hasQuote && agreedTotal > 0 && quoteTotal != agreedTotal;
+
+    return _SectionCard(
+      title: 'Price',
+      icon: Icons.currency_pound_rounded,
+      accentColor: const Color(0xFF6C63FF),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Guide range
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Guide Range',
+                    style:
+                        TextStyle(fontSize: 12, color: Colors.grey[500])),
+                Text(
+                  '£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A2E)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          if (hasQuote) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isNewQuote
+                    ? const Color(0xFFFF6B6B).withOpacity(0.05)
+                    : const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(10),
+                border: isNewQuote
+                    ? Border.all(
+                        color:
+                            const Color(0xFFFF6B6B).withOpacity(0.3))
+                    : null,
+              ),
+              child: Column(
+                children: [
+                  // Quote row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.request_quote_outlined,
+                              size: 14,
+                              color: isNewQuote
+                                  ? const Color(0xFFFF6B6B)
+                                  : Colors.grey[500]),
+                          const SizedBox(width: 6),
+                          Text('Quote',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[500])),
+                        ],
+                      ),
+                      Text(
+                        '£${quoteTotal.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: isNewQuote
+                              ? const Color(0xFFFF6B6B)
+                              : const Color(0xFF1A1A2E),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Agreed row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.check_circle_outline,
+                              size: 14,
+                              color: isNewQuote
+                                  ? const Color(0xFFFF6B6B)
+                                  : const Color(0xFF43C59E)),
+                          const SizedBox(width: 6),
+                          Text('Agreed',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey[500])),
+                        ],
+                      ),
+                      Text(
+                        '£${agreedTotal.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: isNewQuote
+                              ? const Color(0xFFFF6B6B)
+                              : const Color(0xFF43C59E),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // New quote warning
+                  if (isNewQuote) ...[
+                    const SizedBox(height: 10),
+                    const Divider(height: 1),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Icon(Icons.info_outline,
+                            size: 13, color: Color(0xFFFF6B6B)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'New quote submitted — please review and make a decision.',
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.grey[500]),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            // Quote status
+            if (widget.task.quoteStatus != null) ...[
+              const SizedBox(height: 8),
+              _QuoteStatusChip(
+                status: widget.task.quoteStatus!,
+                declineReason: widget.task.quoteDeclineReason,
+              ),
+            ],
+          ] else ...[
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.hourglass_empty_rounded,
+                      size: 14, color: Colors.grey[400]),
+                  const SizedBox(width: 8),
+                  Text('No quote submitted yet',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey[400])),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _buildScheduleAndTimelineSection() {
     final startTime    = widget.task.metadata['startTime']    as String?;
@@ -562,7 +698,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Assigned builders ──────────────────────────────────────────
           if (widget.task.assignedBuilderIds.isNotEmpty) ...[
             ...widget.task.assignedBuilderIds.map((id) => Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -573,7 +708,8 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                       color: const Color(0xFF43C59E).withOpacity(0.06),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: const Color(0xFF43C59E).withOpacity(0.2)),
+                          color:
+                              const Color(0xFF43C59E).withOpacity(0.2)),
                     ),
                     child: Row(
                       children: [
@@ -617,7 +753,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
               ),
             ),
 
-          // ── Assign button ──────────────────────────────────────────────
           if (_editMode)
             GestureDetector(
               onTap: () => Navigator.push(
@@ -685,13 +820,11 @@ class _TaskDetailPageState extends State<TaskDetailPage>
               ),
             ),
 
-          // ── Divider ────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Divider(height: 1, color: Colors.grey.shade100),
           ),
 
-          // ── Dates ──────────────────────────────────────────────────────
           Row(
             children: [
               Expanded(
@@ -735,7 +868,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           ),
           const SizedBox(height: 10),
 
-          // ── Duration ───────────────────────────────────────────────────
           _editMode
               ? TextField(
                   controller: _durationController,
@@ -840,7 +972,8 @@ class _TaskDetailPageState extends State<TaskDetailPage>
               Icon(icon, size: 13, color: color),
               const SizedBox(width: 4),
               Text(label,
-                  style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                  style:
+                      TextStyle(fontSize: 11, color: Colors.grey[500])),
               const Spacer(),
               Icon(Icons.edit_calendar_outlined, size: 12, color: color),
             ]),
@@ -855,78 +988,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       ),
     );
   }
-
-  // ── 4 · Price ────────────────────────────────────────────────────────────
-
-  Widget _buildPriceSection() {
-    return _SectionCard(
-      title: 'Price',
-      icon: Icons.currency_pound_rounded,
-      accentColor: const Color(0xFF6C63FF),
-      editMode: _editMode,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Guide range — always read-only
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Guide Range',
-                    style:
-                        TextStyle(fontSize: 12, color: Colors.grey[500])),
-                Text(
-                  '£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A2E)),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text('Agreed Price',
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[600])),
-          const SizedBox(height: 8),
-          _editMode
-              ? TextField(
-                  controller: _priceController,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A2E)),
-                  decoration: _inputDeco('0').copyWith(
-                    prefixText: '£',
-                    prefixStyle: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF6C63FF)),
-                  ),
-                )
-              : Text(
-                  '£${widget.task.guidePrice.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A2E)),
-                ),
-        ],
-      ),
-    );
-  }
-
-  // ── 5 · Negotiation ──────────────────────────────────────────────────────
 
   Widget _buildNegotiationSection() {
     return _SectionCard(
@@ -994,7 +1055,8 @@ class _TaskDetailPageState extends State<TaskDetailPage>
         color: highlight ? color.withOpacity(0.08) : Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: highlight ? color.withOpacity(0.25) : Colors.grey.shade200,
+          color:
+              highlight ? color.withOpacity(0.25) : Colors.grey.shade200,
         ),
       ),
       child: Column(
@@ -1011,8 +1073,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       ),
     );
   }
-
-  // ── 7 · Action space ─────────────────────────────────────────────────────
 
   Widget _buildActionSpaceSection() {
     final actionMeta = <String, _ActionMeta>{
@@ -1041,14 +1101,15 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           final meta = actionMeta[action];
           if (meta == null) return const SizedBox.shrink();
           return GestureDetector(
-            onTap: () { /* TODO */ },
+            onTap: () {},
             child: Container(
               padding: const EdgeInsets.symmetric(
                   horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: meta.color.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: meta.color.withOpacity(0.25)),
+                border:
+                    Border.all(color: meta.color.withOpacity(0.25)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1068,8 +1129,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       ),
     );
   }
-
-  // ── 8 · Audit ────────────────────────────────────────────────────────────
 
   Widget _buildAuditSection() {
     return Padding(
@@ -1106,7 +1165,72 @@ class _TaskDetailPageState extends State<TaskDetailPage>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Supporting classes (top-level)
+// _QuoteStatusChip
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _QuoteStatusChip extends StatelessWidget {
+  final String status;
+  final String? declineReason;
+
+  const _QuoteStatusChip({required this.status, this.declineReason});
+
+  Color get _color {
+    switch (status) {
+      case 'accepted': return const Color(0xFF43C59E);
+      case 'declined': return const Color(0xFFFF6B6B);
+      default:         return const Color(0xFFFFB347);
+    }
+  }
+
+  String get _label {
+    switch (status) {
+      case 'accepted': return 'Quote Approved';
+      case 'declined': return 'Quote Declined';
+      default:         return 'Quote Pending';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.circle, size: 8, color: _color),
+            const SizedBox(width: 6),
+            Text(_label,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _color)),
+          ],
+        ),
+        if (status == 'declined' &&
+            declineReason != null &&
+            declineReason!.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.message_outlined,
+                  size: 11, color: Colors.grey[400]),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(declineReason!,
+                    style: TextStyle(
+                        fontSize: 11, color: Colors.grey[500])),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Supporting classes
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ActionMeta {
@@ -1142,7 +1266,8 @@ class _SectionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: editMode
             ? Border.all(
-                color: const Color(0xFF6C63FF).withOpacity(0.3), width: 1.5)
+                color: const Color(0xFF6C63FF).withOpacity(0.3),
+                width: 1.5)
             : null,
         boxShadow: [
           BoxShadow(
