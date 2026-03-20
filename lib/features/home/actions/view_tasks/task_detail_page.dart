@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../models/task_model.dart';
 import '../schedule_work/task_schedule_detail_page.dart';
+import '../review_quotes/quote_management_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TaskDetailPage
@@ -69,12 +70,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     } catch (_) { return '—'; }
   }
 
-  String _formatDateFromDT(DateTime? dt) {
-    if (dt == null) return '—';
-    return DateFormat('EEE d MMM yyyy').format(dt);
-  }
-
-  String _formatDateTime(String? iso) {
+String _formatDateTime(String? iso) {
     if (iso == null) return '—';
     try {
       return DateFormat('d MMM yyyy · HH:mm').format(DateTime.parse(iso).toLocal());
@@ -169,32 +165,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     ));
   }
 
-  Future<void> _pickDate(BuildContext context, {required bool isStart}) async {
-    final initial = isStart
-        ? (_editStartDate ?? DateTime.now())
-        : (_editEndDate   ?? DateTime.now());
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.light(
-            primary: Color(0xFF6C63FF),
-            onPrimary: Colors.white,
-          ),
-        ),
-        child: child!,
-      ),
-    );
-    if (picked != null) setState(() {
-      if (isStart) _editStartDate = picked;
-      else         _editEndDate   = picked;
-    });
-  }
-
-  InputDecoration _inputDeco(String hint) => InputDecoration(
+InputDecoration _inputDeco(String hint) => InputDecoration(
     hintText: hint,
     hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -519,7 +490,17 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     final isNewQuote =
         hasQuote && agreedTotal > 0 && quoteTotal != agreedTotal;
 
-    return _SectionCard(
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => QuoteManagementPage(
+            projectId: widget.task.parentTaskId ?? widget.task.taskId,
+            projectName: widget.task.taskName,
+          ),
+        ),
+      ),
+      child: _SectionCard(
       title: 'Price',
       icon: Icons.currency_pound_rounded,
       accentColor: const Color(0xFF6C63FF),
@@ -682,237 +663,138 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           ],
         ],
       ),
+    ),
     );
   }
 
   Widget _buildScheduleAndTimelineSection() {
-    final startTime    = widget.task.metadata['startTime']    as String?;
-    final endTime      = widget.task.metadata['endTime']      as String?;
-    final durationDays = widget.task.metadata['durationDays'];
-
-    return _SectionCard(
-      title: 'Builder & Schedule',
-      icon: Icons.groups_2_outlined,
-      accentColor: const Color(0xFF43C59E),
-      editMode: _editMode,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (widget.task.assignedBuilderIds.isNotEmpty) ...[
-            ...widget.task.assignedBuilderIds.map((id) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF43C59E).withOpacity(0.06),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color:
-                              const Color(0xFF43C59E).withOpacity(0.2)),
-                    ),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 16,
-                          backgroundColor:
-                              const Color(0xFF43C59E).withOpacity(0.15),
-                          child: Text(
-                            id.substring(0, 1).toUpperCase(),
-                            style: const TextStyle(
-                                color: Color(0xFF43C59E),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(id,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF1A1A2E),
-                                  fontWeight: FontWeight.w500),
-                              overflow: TextOverflow.ellipsis),
-                        ),
-                      ],
-                    ),
-                  ),
-                )),
-          ] else
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline,
-                      size: 14, color: Colors.orange[300]),
-                  const SizedBox(width: 6),
-                  Text('No builders assigned yet',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.orange[400])),
-                ],
-              ),
+    return Column(
+      children: [
+        // ── Assign Builder ───────────────────────────────────────────────
+        GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => TaskScheduleDetailPage(task: widget.task),
             ),
-
-          if (_editMode)
-            GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) =>
-                        TaskScheduleDetailPage(task: widget.task)),
-              ),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF43C59E), Color(0xFF3AB58E)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                        color: const Color(0xFF43C59E).withOpacity(0.3),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4)),
-                  ],
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.calendar_month_rounded,
-                        color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Text('Assign Builder & Arrange Time',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14)),
-                    SizedBox(width: 6),
-                    Icon(Icons.arrow_forward_ios_rounded,
-                        color: Colors.white, size: 12),
-                  ],
-                ),
-              ),
-            )
-          else
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.lock_outline_rounded,
-                      size: 15, color: Colors.grey[400]),
-                  const SizedBox(width: 8),
-                  Text('Assign Builder & Arrange Time',
-                      style: TextStyle(
-                          color: Colors.grey[400],
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14)),
-                ],
-              ),
-            ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Divider(height: 1, color: Colors.grey.shade100),
           ),
-
-          Row(
+          child: _SectionCard(
+          title: 'Assigned Builder',
+          icon: Icons.person_outline_rounded,
+          accentColor: const Color(0xFF43C59E),
+          editMode: _editMode,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: _editMode
-                    ? _tappableDateBox(
-                        label: 'Start',
-                        value: _editStartDate != null
-                            ? _formatDateFromDT(_editStartDate)
-                            : _formatDate(startTime),
-                        icon: Icons.play_circle_outline_rounded,
-                        color: const Color(0xFF43C59E),
-                        onTap: () => _pickDate(context, isStart: true),
-                      )
-                    : _readDateBox(
-                        label: 'Start',
-                        value: _formatDate(startTime),
-                        icon: Icons.play_circle_outline_rounded,
-                        color: const Color(0xFF43C59E),
-                      ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _editMode
-                    ? _tappableDateBox(
-                        label: 'End',
-                        value: _editEndDate != null
-                            ? _formatDateFromDT(_editEndDate)
-                            : _formatDate(endTime),
-                        icon: Icons.stop_circle_outlined,
-                        color: const Color(0xFFFF6B6B),
-                        onTap: () => _pickDate(context, isStart: false),
-                      )
-                    : _readDateBox(
-                        label: 'End',
-                        value: _formatDate(endTime),
-                        icon: Icons.stop_circle_outlined,
-                        color: const Color(0xFFFF6B6B),
-                      ),
-              ),
+              // Builder list or empty state
+              if (widget.task.assignedBuilderIds.isNotEmpty)
+                ...widget.task.assignedBuilderIds
+                    .map((id) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF43C59E)
+                                  .withOpacity(0.06),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: const Color(0xFF43C59E)
+                                      .withOpacity(0.2)),
+                            ),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor:
+                                      const Color(0xFF43C59E)
+                                          .withOpacity(0.15),
+                                  child: Text(
+                                    id.substring(0, 1).toUpperCase(),
+                                    style: const TextStyle(
+                                        color: Color(0xFF43C59E),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(id,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF1A1A2E),
+                                          fontWeight: FontWeight.w500),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ))
+              else
+                Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 14, color: Colors.orange[300]),
+                    const SizedBox(width: 6),
+                    Text('No builder assigned yet',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.orange[400])),
+                  ],
+                ),
+
+              // ── Scheduled dates (shown when available) ────────────────
+              if (widget.task.metadata['scheduledDates'] != null &&
+                  (widget.task.metadata['scheduledDates'] as List)
+                      .isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Divider(height: 1, color: Colors.grey.shade100),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Icon(Icons.calendar_today_outlined,
+                        size: 13, color: Colors.grey[400]),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${(widget.task.metadata['scheduledDates'] as List).length} day${(widget.task.metadata['scheduledDates'] as List).length > 1 ? 's' : ''} scheduled',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[500],
+                          fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: (widget.task.metadata['scheduledDates'] as List)
+                      .map((date) => Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6C63FF)
+                                  .withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                  color: const Color(0xFF6C63FF)
+                                      .withOpacity(0.2)),
+                            ),
+                            child: Text(
+                              date.toString(),
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF6C63FF),
+                                  fontWeight: FontWeight.w500),
+                            ),
+                          ))
+                      .toList(),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 10),
-
-          _editMode
-              ? TextField(
-                  controller: _durationController,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(
-                      fontSize: 14, color: Color(0xFF1A1A2E)),
-                  decoration: _inputDeco('Number of working days').copyWith(
-                    prefixIcon: Icon(Icons.timelapse_rounded,
-                        size: 18, color: Colors.grey[400]),
-                    suffixText: 'days',
-                    suffixStyle:
-                        TextStyle(fontSize: 13, color: Colors.grey[400]),
-                  ),
-                )
-              : Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F5F5),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.timelapse_rounded,
-                          size: 15, color: Colors.grey[400]),
-                      const SizedBox(width: 8),
-                      Text('Duration',
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.grey[500])),
-                      const Spacer(),
-                      Text(
-                        durationDays != null
-                            ? '$durationDays working day${durationDays > 1 ? 's' : ''}'
-                            : '—',
-                        style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A2E)),
-                      ),
-                    ],
-                  ),
-                ),
-        ],
-      ),
+        ),
+        ),
+      ],
     );
   }
 

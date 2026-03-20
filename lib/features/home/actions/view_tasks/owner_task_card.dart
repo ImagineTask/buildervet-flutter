@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/task_model.dart';
+import '../schedule_work/task_schedule_detail_page.dart';
 import 'task_detail_page.dart';
 
 class OwnerTaskCard extends StatefulWidget {
@@ -405,52 +406,69 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                   // ── Quote & Agreed prices ──────────────────────────────
                   if (task.hasQuote) ...[
                     const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        Icon(Icons.request_quote_outlined,
-                            size: 13, color: Colors.grey[400]),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Quote: £${(task.quoteTotal ?? 0).toStringAsFixed(0)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: (task.agreedTotal != null &&
-                                    task.agreedTotal! > 0 &&
-                                    task.quoteTotal != task.agreedTotal)
-                                ? const Color(0xFFFF6B6B)
-                                : Colors.grey[500],
-                            fontWeight: (task.agreedTotal != null &&
-                                    task.agreedTotal! > 0 &&
-                                    task.quoteTotal != task.agreedTotal)
-                                ? FontWeight.w600
-                                : FontWeight.normal,
+                    if (task.agreedTotal != null &&
+                        task.agreedTotal! > 0 &&
+                        task.quoteTotal != task.agreedTotal) ...[
+                      // New quote
+                      Row(
+                        children: [
+                          Icon(Icons.fiber_new_rounded,
+                              size: 14, color: const Color(0xFFFF6B6B)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'New Quote: £${(task.quoteTotal ?? 0).toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFFF6B6B),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Icon(Icons.check_circle_outline,
-                            size: 13, color: const Color(0xFF43C59E)),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Agreed: £${(task.agreedTotal ?? 0).toStringAsFixed(0)}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: (task.agreedTotal != null &&
-                                    task.agreedTotal! > 0 &&
-                                    task.quoteTotal != task.agreedTotal)
-                                ? const Color(0xFFFF6B6B)
-                                : const Color(0xFF43C59E),
+                          const Spacer(),
+                          if (task.quoteStatus != null)
+                            _QuoteStatusBadge(status: task.quoteStatus!),
+                        ],
+                      ),
+                    ] else ...[
+                      // Quote == Agreed
+                      Row(
+                        children: [
+                          Icon(Icons.check_circle_outline,
+                              size: 13, color: const Color(0xFF43C59E)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Agreed: £${(task.agreedTotal ?? 0).toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF43C59E),
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                          const Spacer(),
+                          if (task.quoteStatus != null)
+                            _QuoteStatusBadge(status: task.quoteStatus!),
+                        ],
+                      ),
+                    ],
 
-                    // Quote status badge
-                    if (task.quoteStatus != null) ...[
-                      const SizedBox(height: 6),
-                      _QuoteStatusRow(
-                        status: task.quoteStatus!,
-                        declineReason: task.quoteDeclineReason,
+                    // Decline reason if any
+                    if (task.quoteStatus == 'declined' &&
+                        task.quoteDeclineReason != null &&
+                        task.quoteDeclineReason!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.message_outlined,
+                              size: 11, color: Colors.grey[400]),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              task.quoteDeclineReason!,
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey[500]),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -731,6 +749,52 @@ class _PriceColumn extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _QuoteStatusBadge — compact inline badge
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _QuoteStatusBadge extends StatelessWidget {
+  final String status;
+  const _QuoteStatusBadge({required this.status});
+
+  Color get _color {
+    switch (status) {
+      case 'accepted': return const Color(0xFF43C59E);
+      case 'declined': return const Color(0xFFFF6B6B);
+      default:         return const Color(0xFFFFB347);
+    }
+  }
+
+  String get _label {
+    switch (status) {
+      case 'accepted': return 'Approved';
+      case 'declined': return 'Declined';
+      default:         return 'Pending';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: _color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _color.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        _label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: _color,
+        ),
+      ),
     );
   }
 }
