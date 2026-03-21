@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/task_model.dart';
-import '../schedule_work/task_schedule_detail_page.dart';
 import 'task_detail_page.dart';
 
 class OwnerTaskCard extends StatefulWidget {

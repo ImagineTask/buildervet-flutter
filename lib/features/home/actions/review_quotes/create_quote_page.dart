@@ -31,6 +31,7 @@ class CreateQuotePage extends StatefulWidget {
 class _CreateQuotePageState extends State<CreateQuotePage> {
   final Map<String, TextEditingController> _materialControllers = {};
   final Map<String, TextEditingController> _labourControllers = {};
+  final _reasonController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _loading = false;
   bool _tasksLoading = true;
@@ -85,6 +86,7 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
   void dispose() {
     for (final c in _materialControllers.values) c.dispose();
     for (final c in _labourControllers.values) c.dispose();
+    _reasonController.dispose();
     super.dispose();
   }
 
@@ -101,6 +103,77 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Show note dialog when updating an existing quote
+    if (widget.existingTasks != null) {
+      _reasonController.clear();
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Update Quote',
+            style: TextStyle(
+                fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Add a note for the homeowner explaining the changes (optional).',
+                style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _reasonController,
+                maxLines: 3,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'e.g. Material costs have increased...',
+                  hintStyle:
+                      TextStyle(color: Colors.grey[400], fontSize: 13),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide:
+                        BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide:
+                        BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(
+                        color: Color(0xFF43C59E), width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.grey)),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF43C59E),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Send'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -125,7 +198,21 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
         final ref = FirebaseFirestore.instance
             .collection('tasks')
             .doc(task.taskId);
-        batch.update(ref, {
+        final reason = widget.existingTasks != null
+            ? _reasonController.text.trim()
+            : null;
+
+        final historyEntry = {
+          'type': 'submitted',
+          'material': material,
+          'labour': labour,
+          'total': material + labour,
+          'submittedAt': DateTime.now().toIso8601String(),
+          'actorName': builderName,
+          if (reason != null && reason.isNotEmpty) 'note': reason,
+        };
+
+        final fields = <String, dynamic>{
           'quoteBuilderId': user.uid,
           'quoteBuilderName': builderName,
           'quoteMaterial': material,
@@ -133,7 +220,12 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
           'quoteTotal': material + labour,
           'quoteStatus': 'pending',
           'quoteSubmittedAt': FieldValue.serverTimestamp(),
-        });
+          'quoteHistory': FieldValue.arrayUnion([historyEntry]),
+        };
+        if (reason != null) {
+          fields['quoteUpdateReason'] = reason.isEmpty ? null : reason;
+        }
+        batch.update(ref, fields);
       }
       await batch.commit();
 
@@ -225,8 +317,7 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
               itemBuilder: (context, index) {
                 if (index == _tasks.length) {
                   return Padding(
-                    padding:
-                        const EdgeInsets.only(top: 8, bottom: 24),
+                    padding: const EdgeInsets.only(top: 8, bottom: 24),
                     child: _SendButton(
                       total: _total,
                       loading: _loading,

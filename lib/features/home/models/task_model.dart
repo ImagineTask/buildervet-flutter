@@ -38,6 +38,7 @@ class TaskModel {
   final double? agreedTotal;
   final DateTime? agreedAt;
   final String? quoteDeclineReason;
+  final String? quoteUpdateReason;
 
   bool get hasQuote => quoteBuilderId != null;
   bool get hasAgreedPrice => agreedTotal != null;
@@ -76,6 +77,7 @@ class TaskModel {
     this.agreedTotal,
     this.agreedAt,
     this.quoteDeclineReason,
+    this.quoteUpdateReason,
   });
 
   bool get isProject => taskType == 'project';
@@ -115,6 +117,7 @@ class TaskModel {
     double? agreedTotal,
     DateTime? agreedAt,
     String? quoteDeclineReason,
+    String? quoteUpdateReason,
   }) {
     return TaskModel(
       id: id ?? this.id,
@@ -150,6 +153,7 @@ class TaskModel {
       agreedTotal: agreedTotal ?? this.agreedTotal,
       agreedAt: agreedAt ?? this.agreedAt,
       quoteDeclineReason: quoteDeclineReason ?? this.quoteDeclineReason,
+      quoteUpdateReason: quoteUpdateReason ?? this.quoteUpdateReason,
     );
   }
 
@@ -190,6 +194,7 @@ class TaskModel {
       agreedTotal: (d['agreedTotal'])?.toDouble(),
       agreedAt: _parseDateNullable(d['agreedAt']),
       quoteDeclineReason: d['quoteDeclineReason'],
+      quoteUpdateReason: d['quoteUpdateReason'],
     );
   }
 

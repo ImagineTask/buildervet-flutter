@@ -1,5 +1,47 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QuoteHistoryEntry — a single historical quote submission
+// ─────────────────────────────────────────────────────────────────────────────
+
+class QuoteHistoryEntry {
+  final String type; // 'submitted' | 'approved' | 'declined'
+  final double material;
+  final double labour;
+  final double total;
+  final DateTime submittedAt;
+  final String actorName; // builder name or homeowner name
+  final String? note; // updateReason or declineReason
+
+  const QuoteHistoryEntry({
+    required this.type,
+    required this.material,
+    required this.labour,
+    required this.total,
+    required this.submittedAt,
+    required this.actorName,
+    this.note,
+  });
+
+  factory QuoteHistoryEntry.fromMap(Map<String, dynamic> m) =>
+      QuoteHistoryEntry(
+        type: m['type'] ?? 'submitted',
+        material: (m['material'] ?? 0).toDouble(),
+        labour: (m['labour'] ?? 0).toDouble(),
+        total: (m['total'] ?? 0).toDouble(),
+        submittedAt: _parse(m['submittedAt']),
+        actorName: m['actorName'] ?? m['builderName'] ?? '',
+        note: m['note'] ?? m['updateReason'],
+      );
+
+  static DateTime _parse(dynamic v) {
+    if (v == null) return DateTime.now();
+    if (v is String) return DateTime.tryParse(v) ?? DateTime.now();
+    return DateTime.now();
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ProjectQuote
 //
@@ -20,6 +62,8 @@ class ProjectQuote {
   final double agreedLabour;
   final String? homeownerId;
   final String? declineReason;
+  final String? updateReason;
+  final List<QuoteHistoryEntry> history;
 
   double get total => totalMaterial + totalLabour;
   double get agreedTotal => agreedMaterial + agreedLabour;
@@ -35,6 +79,8 @@ class ProjectQuote {
     required this.submittedAt,
     this.homeownerId,
     this.declineReason,
+    this.updateReason,
+    this.history = const [],
   });
 
   /// Derives one ProjectQuote from all task documents.
@@ -70,6 +116,8 @@ class ProjectQuote {
       submittedAt: first.quoteSubmittedAt ?? DateTime.now(),
       homeownerId: homeownerId.isEmpty ? null : homeownerId,
       declineReason: first.quoteDeclineReason,
+      updateReason: first.quoteUpdateReason,
+      history: first.quoteHistory,
     );
   }
 }
@@ -98,6 +146,8 @@ class TaskItem {
   final double? agreedLabour;
   final List<String> participantIds;
   final String? quoteDeclineReason;
+  final String? quoteUpdateReason;
+  final List<QuoteHistoryEntry> quoteHistory;
 
   bool get hasQuote => quoteBuilderId != null;
   double get quoteTotal => (quoteMaterial ?? 0) + (quoteLabour ?? 0);
@@ -120,6 +170,8 @@ class TaskItem {
     this.agreedLabour,
     this.participantIds = const [],
     this.quoteDeclineReason,
+    this.quoteUpdateReason,
+    this.quoteHistory = const [],
   });
 
   factory TaskItem.fromFirestore(DocumentSnapshot doc) {
@@ -143,6 +195,12 @@ class TaskItem {
       agreedLabour: (d['agreedLabour'])?.toDouble(),
       participantIds: List<String>.from(d['participantIds'] ?? []),
       quoteDeclineReason: d['quoteDeclineReason'],
+      quoteUpdateReason: d['quoteUpdateReason'],
+      quoteHistory: (d['quoteHistory'] as List? ?? [])
+          .map((e) => QuoteHistoryEntry.fromMap(
+              Map<String, dynamic>.from(e as Map)))
+          .toList()
+        ..sort((a, b) => b.submittedAt.compareTo(a.submittedAt)),
     );
   }
 

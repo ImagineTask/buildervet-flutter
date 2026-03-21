@@ -24,13 +24,16 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
+  // ── Local mutable copy of the task ────────────────────────────────────────
+  late TaskModel _task;
+
   bool _editMode = false;
   bool _isSaving = false;
   DateTime? _editStartDate;
   DateTime? _editEndDate;
 
   Color get _statusColor {
-    switch (widget.task.status) {
+    switch (_task.status) {
       case 'draft':              return const Color(0xFF9E9E9E);
       case 'pending_acceptance': return const Color(0xFFFFB347);
       case 'active':             return const Color(0xFF6C63FF);
@@ -42,35 +45,28 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   }
 
   String get _statusLabel {
-    switch (widget.task.status) {
+    switch (_task.status) {
       case 'draft':              return 'Draft';
       case 'pending_acceptance': return 'Awaiting Acceptance';
       case 'active':             return 'Active';
       case 'negotiating':        return 'Negotiating';
       case 'done':               return 'Done';
       case 'denied':             return 'Denied';
-      default:                   return widget.task.status;
+      default:                   return _task.status;
     }
   }
 
   bool get _hasNegotiation =>
-      widget.task.metadata['negotiation'] != null &&
-      widget.task.status == 'negotiating';
+      _task.metadata['negotiation'] != null &&
+      _task.status == 'negotiating';
 
   Map<String, dynamic> get _negotiation =>
-      Map<String, dynamic>.from(widget.task.metadata['negotiation'] ?? {});
+      Map<String, dynamic>.from(_task.metadata['negotiation'] ?? {});
 
   List<String> get _actionSpace =>
-      List<String>.from(widget.task.metadata['actionSpace'] ?? []);
+      List<String>.from(_task.metadata['actionSpace'] ?? []);
 
-  String _formatDate(String? iso) {
-    if (iso == null) return '—';
-    try {
-      return DateFormat('EEE d MMM yyyy').format(DateTime.parse(iso).toLocal());
-    } catch (_) { return '—'; }
-  }
-
-String _formatDateTime(String? iso) {
+  String _formatDateTime(String? iso) {
     if (iso == null) return '—';
     try {
       return DateFormat('d MMM yyyy · HH:mm').format(DateTime.parse(iso).toLocal());
@@ -80,13 +76,15 @@ String _formatDateTime(String? iso) {
   @override
   void initState() {
     super.initState();
-    _descriptionController =
-        TextEditingController(text: widget.task.description);
-    _durationController = TextEditingController(
-        text: (widget.task.metadata['durationDays'] ?? '').toString());
 
-    final rawStart = widget.task.metadata['startTime'] as String?;
-    final rawEnd   = widget.task.metadata['endTime']   as String?;
+    _task = widget.task;
+
+    _descriptionController = TextEditingController(text: _task.description);
+    _durationController = TextEditingController(
+        text: (_task.metadata['durationDays'] ?? '').toString());
+
+    final rawStart = _task.metadata['startTime'] as String?;
+    final rawEnd   = _task.metadata['endTime']   as String?;
     if (rawStart != null) _editStartDate = DateTime.tryParse(rawStart)?.toLocal();
     if (rawEnd   != null) _editEndDate   = DateTime.tryParse(rawEnd)?.toLocal();
 
@@ -105,18 +103,31 @@ String _formatDateTime(String? iso) {
     super.dispose();
   }
 
+  // ── Reload task from Firestore after returning from schedule page ──────────
+  Future<void> _reloadTask() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('tasks')
+          .doc(_task.id)
+          .get();
+      if (snap.exists && mounted) {
+        setState(() => _task = TaskModel.fromFirestore(snap));
+      }
+    } catch (_) {}
+  }
+
   void _enterEditMode() => setState(() => _editMode = true);
 
   void _cancelEdit() {
-    _descriptionController.text = widget.task.description;
+    _descriptionController.text = _task.description;
     _durationController.text =
-        (widget.task.metadata['durationDays'] ?? '').toString();
-    final rawStart = widget.task.metadata['startTime'] as String?;
-    final rawEnd   = widget.task.metadata['endTime']   as String?;
+        (_task.metadata['durationDays'] ?? '').toString();
+    final rawStart = _task.metadata['startTime'] as String?;
+    final rawEnd   = _task.metadata['endTime']   as String?;
     _editStartDate =
         rawStart != null ? DateTime.tryParse(rawStart)?.toLocal() : null;
     _editEndDate =
-        rawEnd   != null ? DateTime.tryParse(rawEnd)?.toLocal()   : null;
+        rawEnd != null ? DateTime.tryParse(rawEnd)?.toLocal() : null;
     setState(() => _editMode = false);
   }
 
@@ -136,7 +147,7 @@ String _formatDateTime(String? iso) {
 
       await FirebaseFirestore.instance
           .collection('tasks')
-          .doc(widget.task.id)
+          .doc(_task.id)
           .update(updates);
 
       if (mounted) {
@@ -165,7 +176,7 @@ String _formatDateTime(String? iso) {
     ));
   }
 
-InputDecoration _inputDeco(String hint) => InputDecoration(
+  InputDecoration _inputDeco(String hint) => InputDecoration(
     hintText: hint,
     hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -205,7 +216,7 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
                   const SizedBox(height: 16),
                   _buildPriceSection(),
                   const SizedBox(height: 16),
-                  _buildScheduleAndTimelineSection(),
+                  _buildAssignedBuilderSection(),
                   if (_hasNegotiation) ...[
                     const SizedBox(height: 16),
                     _buildNegotiationSection(),
@@ -227,6 +238,8 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
       floatingActionButton: _buildFab(),
     );
   }
+
+  // ── App Bar ───────────────────────────────────────────────────────────────
 
   SliverAppBar _buildAppBar() {
     return SliverAppBar(
@@ -257,7 +270,7 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.task.taskName,
+              _task.taskName,
               style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -265,14 +278,16 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            if (widget.task.contractorType != null)
-              Text(widget.task.contractorType!,
+            if (_task.contractorType != null)
+              Text(_task.contractorType!,
                   style: TextStyle(fontSize: 11, color: Colors.grey[500])),
           ],
         ),
       ),
     );
   }
+
+  // ── FAB ───────────────────────────────────────────────────────────────────
 
   Widget _buildFab() {
     if (_editMode) {
@@ -400,8 +415,10 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
     );
   }
 
+  // ── Status Banner ─────────────────────────────────────────────────────────
+
   Widget _buildStatusBanner() {
-    final taskOrder = widget.task.metadata['taskOrder'];
+    final taskOrder = _task.metadata['taskOrder'];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -451,6 +468,8 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
     );
   }
 
+  // ── Description ───────────────────────────────────────────────────────────
+
   Widget _buildDescriptionSection() {
     return _SectionCard(
       title: 'Description',
@@ -465,28 +484,28 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
               decoration: _inputDeco('Describe the task...'),
             )
           : Text(
-              widget.task.description.isEmpty
+              _task.description.isEmpty
                   ? 'No description provided.'
-                  : widget.task.description,
+                  : _task.description,
               style: TextStyle(
                   fontSize: 14,
-                  color: widget.task.description.isEmpty
+                  color: _task.description.isEmpty
                       ? Colors.grey[400]
                       : Colors.grey[600],
                   height: 1.6,
-                  fontStyle: widget.task.description.isEmpty
+                  fontStyle: _task.description.isEmpty
                       ? FontStyle.italic
                       : FontStyle.normal),
             ),
     );
   }
 
-  // ── Price section — read-only, shows quote + agreed ──────────────────────
+  // ── Price ─────────────────────────────────────────────────────────────────
 
   Widget _buildPriceSection() {
-    final hasQuote = widget.task.hasQuote;
-    final quoteTotal = widget.task.quoteTotal ?? 0;
-    final agreedTotal = widget.task.agreedTotal ?? 0;
+    final hasQuote = _task.hasQuote;
+    final quoteTotal = _task.quoteTotal ?? 0;
+    final agreedTotal = _task.agreedTotal ?? 0;
     final isNewQuote =
         hasQuote && agreedTotal > 0 && quoteTotal != agreedTotal;
 
@@ -495,65 +514,60 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
         context,
         MaterialPageRoute(
           builder: (_) => QuoteManagementPage(
-            projectId: widget.task.parentTaskId ?? widget.task.taskId,
-            projectName: widget.task.taskName,
+            projectId: _task.parentTaskId ?? _task.taskId,
+            projectName: _task.taskName,
           ),
         ),
       ),
       child: _SectionCard(
-      title: 'Price',
-      icon: Icons.currency_pound_rounded,
-      accentColor: const Color(0xFF6C63FF),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Guide range
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5F5),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Guide Range',
-                    style:
-                        TextStyle(fontSize: 12, color: Colors.grey[500])),
-                Text(
-                  '£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)}',
-                  style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A2E)),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          if (hasQuote) ...[
+        title: 'Price',
+        icon: Icons.currency_pound_rounded,
+        accentColor: const Color(0xFF6C63FF),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: isNewQuote
-                    ? const Color(0xFFFF6B6B).withOpacity(0.05)
-                    : const Color(0xFFF5F5F5),
+                color: const Color(0xFFF5F5F5),
                 borderRadius: BorderRadius.circular(10),
-                border: isNewQuote
-                    ? Border.all(
-                        color:
-                            const Color(0xFFFF6B6B).withOpacity(0.3))
-                    : null,
               ),
-              child: Column(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Quote row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
+                  Text('Guide Range',
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                  Text(
+                    '£${_task.guidePriceMin.toStringAsFixed(0)} – £${_task.guidePriceMax.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A2E)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            if (hasQuote) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isNewQuote
+                      ? const Color(0xFFFF6B6B).withOpacity(0.05)
+                      : const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(10),
+                  border: isNewQuote
+                      ? Border.all(
+                          color: const Color(0xFFFF6B6B).withOpacity(0.3))
+                      : null,
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(children: [
                           Icon(Icons.request_quote_outlined,
                               size: 14,
                               color: isNewQuote
@@ -563,28 +577,24 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
                           Text('Quote',
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey[500])),
-                        ],
-                      ),
-                      Text(
-                        '£${quoteTotal.toStringAsFixed(0)}',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: isNewQuote
-                              ? const Color(0xFFFF6B6B)
-                              : const Color(0xFF1A1A2E),
+                        ]),
+                        Text(
+                          '£${quoteTotal.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: isNewQuote
+                                ? const Color(0xFFFF6B6B)
+                                : const Color(0xFF1A1A2E),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Agreed row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(children: [
                           Icon(Icons.check_circle_outline,
                               size: 14,
                               color: isNewQuote
@@ -594,282 +604,226 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
                           Text('Agreed',
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey[500])),
-                        ],
-                      ),
-                      Text(
-                        '£${agreedTotal.toStringAsFixed(0)}',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: isNewQuote
-                              ? const Color(0xFFFF6B6B)
-                              : const Color(0xFF43C59E),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // New quote warning
-                  if (isNewQuote) ...[
-                    const SizedBox(height: 10),
-                    const Divider(height: 1),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        const Icon(Icons.info_outline,
-                            size: 13, color: Color(0xFFFF6B6B)),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'New quote submitted — please review and make a decision.',
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey[500]),
+                        ]),
+                        Text(
+                          '£${agreedTotal.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: isNewQuote
+                                ? const Color(0xFFFF6B6B)
+                                : const Color(0xFF43C59E),
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ],
-              ),
-            ),
-
-            // Quote status
-            if (widget.task.quoteStatus != null) ...[
-              const SizedBox(height: 8),
-              _QuoteStatusChip(
-                status: widget.task.quoteStatus!,
-                declineReason: widget.task.quoteDeclineReason,
-              ),
-            ],
-          ] else ...[
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5F5F5),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.hourglass_empty_rounded,
-                      size: 14, color: Colors.grey[400]),
-                  const SizedBox(width: 8),
-                  Text('No quote submitted yet',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey[400])),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    ),
-    );
-  }
-
-  Widget _buildScheduleAndTimelineSection() {
-    return Column(
-      children: [
-        // ── Assign Builder ───────────────────────────────────────────────
-        GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => TaskScheduleDetailPage(task: widget.task),
-            ),
-          ),
-          child: _SectionCard(
-          title: 'Assigned Builder',
-          icon: Icons.person_outline_rounded,
-          accentColor: const Color(0xFF43C59E),
-          editMode: _editMode,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Builder list or empty state
-              if (widget.task.assignedBuilderIds.isNotEmpty)
-                ...widget.task.assignedBuilderIds
-                    .map((id) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF43C59E)
-                                  .withOpacity(0.06),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                  color: const Color(0xFF43C59E)
-                                      .withOpacity(0.2)),
-                            ),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 16,
-                                  backgroundColor:
-                                      const Color(0xFF43C59E)
-                                          .withOpacity(0.15),
-                                  child: Text(
-                                    id.substring(0, 1).toUpperCase(),
-                                    style: const TextStyle(
-                                        color: Color(0xFF43C59E),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(id,
-                                      style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF1A1A2E),
-                                          fontWeight: FontWeight.w500),
-                                      overflow: TextOverflow.ellipsis),
-                                ),
-                              ],
+                    if (isNewQuote) ...[
+                      const SizedBox(height: 10),
+                      const Divider(height: 1),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Icon(Icons.info_outline,
+                              size: 13, color: Color(0xFFFF6B6B)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'New quote submitted — please review and make a decision.',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey[500]),
                             ),
                           ),
-                        ))
-              else
-                Row(
-                  children: [
-                    Icon(Icons.info_outline,
-                        size: 14, color: Colors.orange[300]),
-                    const SizedBox(width: 6),
-                    Text('No builder assigned yet',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.orange[400])),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
-
-              // ── Scheduled dates (shown when available) ────────────────
-              if (widget.task.metadata['scheduledDates'] != null &&
-                  (widget.task.metadata['scheduledDates'] as List)
-                      .isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Divider(height: 1, color: Colors.grey.shade100),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(Icons.calendar_today_outlined,
-                        size: 13, color: Colors.grey[400]),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${(widget.task.metadata['scheduledDates'] as List).length} day${(widget.task.metadata['scheduledDates'] as List).length > 1 ? 's' : ''} scheduled',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                          fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
+              ),
+              if (_task.quoteStatus != null) ...[
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: (widget.task.metadata['scheduledDates'] as List)
-                      .map((date) => Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF6C63FF)
-                                  .withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: const Color(0xFF6C63FF)
-                                      .withOpacity(0.2)),
-                            ),
-                            child: Text(
-                              date.toString(),
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF6C63FF),
-                                  fontWeight: FontWeight.w500),
-                            ),
-                          ))
-                      .toList(),
+                _QuoteStatusChip(
+                  status: _task.quoteStatus!,
+                  declineReason: _task.quoteDeclineReason,
                 ),
               ],
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.hourglass_empty_rounded,
+                        size: 14, color: Colors.grey[400]),
+                    const SizedBox(width: 8),
+                    Text('No quote submitted yet',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey[400])),
+                  ],
+                ),
+              ),
             ],
-          ),
+          ],
         ),
-        ),
-      ],
-    );
-  }
-
-  Widget _readDateBox({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(icon, size: 13, color: color),
-            const SizedBox(width: 4),
-            Text(label,
-                style: TextStyle(fontSize: 11, color: Colors.grey[500])),
-          ]),
-          const SizedBox(height: 6),
-          Text(value,
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A2E))),
-        ],
       ),
     );
   }
 
-  Widget _tappableDateBox({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
+  // ── Assigned Builder ──────────────────────────────────────────────────────
+  // Uses assignedBuilderIds which is saved by TaskScheduleDetailPage.
+  // Fetches each builder's name from the users collection.
+
+  Widget _buildAssignedBuilderSection() {
+    final builderIds = _task.assignedBuilderIds;
+    final scheduledDates =
+        List<dynamic>.from(_task.metadata['scheduledDates'] ?? []);
+
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.5), width: 1.5),
-        ),
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TaskScheduleDetailPage(task: _task),
+          ),
+        );
+        await _reloadTask();
+      },
+      child: _SectionCard(
+        title: 'Assigned Builder',
+        icon: Icons.person_outline_rounded,
+        accentColor: const Color(0xFF43C59E),
+        editMode: _editMode,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Icon(icon, size: 13, color: color),
-              const SizedBox(width: 4),
-              Text(label,
-                  style:
-                      TextStyle(fontSize: 11, color: Colors.grey[500])),
-              const Spacer(),
-              Icon(Icons.edit_calendar_outlined, size: 12, color: color),
-            ]),
-            const SizedBox(height: 6),
-            Text(value,
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: color)),
+            // ── Builder list ─────────────────────────────────────────
+            if (builderIds.isEmpty)
+              Row(
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 14, color: Colors.orange[300]),
+                  const SizedBox(width: 6),
+                  Text('No builder assigned yet',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.orange[400])),
+                ],
+              )
+            else
+              ...builderIds.map(
+                (id) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: FutureBuilder<DocumentSnapshot>(
+                    future: FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(id)
+                        .get(),
+                    builder: (context, snapshot) {
+                      final name = snapshot.hasData && snapshot.data!.exists
+                          ? (snapshot.data!.data()
+                                  as Map<String, dynamic>)['name']
+                              as String? ??
+                              id
+                          : id;
+                      final initial =
+                          name.isNotEmpty ? name[0].toUpperCase() : '?';
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF43C59E).withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color:
+                                  const Color(0xFF43C59E).withOpacity(0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor:
+                                  const Color(0xFF43C59E).withOpacity(0.15),
+                              child: Text(
+                                initial,
+                                style: const TextStyle(
+                                    color: Color(0xFF43C59E),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                name,
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF1A1A2E),
+                                    fontWeight: FontWeight.w500),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+
+            // ── Scheduled dates ──────────────────────────────────────
+            if (scheduledDates.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Divider(height: 1, color: Colors.grey.shade100),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Icon(Icons.calendar_today_outlined,
+                      size: 13, color: Colors.grey[400]),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${scheduledDates.length} day${scheduledDates.length > 1 ? 's' : ''} scheduled',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[500],
+                        fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: scheduledDates
+                    .map((date) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6C63FF).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: const Color(0xFF6C63FF)
+                                    .withOpacity(0.2)),
+                          ),
+                          child: Text(
+                            date.toString(),
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF6C63FF),
+                                fontWeight: FontWeight.w500),
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+
+  // ── Negotiation ───────────────────────────────────────────────────────────
 
   Widget _buildNegotiationSection() {
     return _SectionCard(
@@ -883,7 +837,7 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
               Expanded(
                   child: _feeBox(
                       'Current',
-                      '£${(_negotiation['currentFee'] as num?)?.toStringAsFixed(0) ?? widget.task.guidePrice.toStringAsFixed(0)}',
+                      '£${(_negotiation['currentFee'] as num?)?.toStringAsFixed(0) ?? _task.guidePrice.toStringAsFixed(0)}',
                       false)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -937,8 +891,7 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
         color: highlight ? color.withOpacity(0.08) : Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color:
-              highlight ? color.withOpacity(0.25) : Colors.grey.shade200,
+          color: highlight ? color.withOpacity(0.25) : Colors.grey.shade200,
         ),
       ),
       child: Column(
@@ -955,6 +908,8 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
       ),
     );
   }
+
+  // ── Action Space ──────────────────────────────────────────────────────────
 
   Widget _buildActionSpaceSection() {
     final actionMeta = <String, _ActionMeta>{
@@ -990,8 +945,7 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
               decoration: BoxDecoration(
                 color: meta.color.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border:
-                    Border.all(color: meta.color.withOpacity(0.25)),
+                border: Border.all(color: meta.color.withOpacity(0.25)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1012,6 +966,8 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
     );
   }
 
+  // ── Audit ─────────────────────────────────────────────────────────────────
+
   Widget _buildAuditSection() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -1022,7 +978,7 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
           Text('Created ',
               style: TextStyle(fontSize: 11, color: Colors.grey[400])),
           Text(
-            _formatDateTime(widget.task.metadata['createdAt'] as String?),
+            _formatDateTime(_task.metadata['createdAt'] as String?),
             style: TextStyle(
                 fontSize: 11,
                 color: Colors.grey[500],
@@ -1034,7 +990,7 @@ InputDecoration _inputDeco(String hint) => InputDecoration(
           Text('Updated ',
               style: TextStyle(fontSize: 11, color: Colors.grey[400])),
           Text(
-            _formatDateTime(widget.task.metadata['updatedAt'] as String?),
+            _formatDateTime(_task.metadata['updatedAt'] as String?),
             style: TextStyle(
                 fontSize: 11,
                 color: Colors.grey[500],
@@ -1148,8 +1104,7 @@ class _SectionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: editMode
             ? Border.all(
-                color: const Color(0xFF6C63FF).withOpacity(0.3),
-                width: 1.5)
+                color: const Color(0xFF6C63FF).withOpacity(0.3), width: 1.5)
             : null,
         boxShadow: [
           BoxShadow(

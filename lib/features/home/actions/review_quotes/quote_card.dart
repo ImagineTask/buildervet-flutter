@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'quote_models.dart';
 import 'quote_detail_page.dart';
 import 'create_quote_page.dart';
@@ -230,29 +231,52 @@ class _QuoteCardState extends State<QuoteCard> {
                 const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFB347).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
                         color: const Color(0xFFFFB347).withValues(alpha: 0.4)),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.info_outline,
-                          size: 15, color: Color(0xFFFFB347)),
-                      const SizedBox(width: 8),
-                      const Expanded(
-                        child: Text(
-                          'A new quote has been submitted. Please review and make a decision.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFFFFB347),
-                            fontWeight: FontWeight.w500,
+                      Row(
+                        children: [
+                          const Icon(Icons.info_outline,
+                              size: 15, color: Color(0xFFFFB347)),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'A new quote has been submitted. Please review and make a decision.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFFFFB347),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ),
-                        ),
+                        ],
                       ),
+                      if (quote.updateReason != null &&
+                          quote.updateReason!.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.notes_outlined,
+                                size: 13, color: Colors.grey[400]),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                quote.updateReason!,
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey[600]),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -333,6 +357,28 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
 
   Future<void> _updateAll(String status,
       {String declineMessage = ''}) async {
+    // Fetch homeowner name for history
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    String actorName = 'Homeowner';
+    if (uid != null) {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .get();
+      actorName = (userDoc.data()?['name'] as String?) ?? 'Homeowner';
+    }
+
+    final historyEntry = {
+      'type': status == 'accepted' ? 'approved' : 'declined',
+      'material': widget.quote.totalMaterial,
+      'labour': widget.quote.totalLabour,
+      'total': widget.quote.total,
+      'submittedAt': DateTime.now().toIso8601String(),
+      'actorName': actorName,
+      if (status == 'declined' && declineMessage.isNotEmpty)
+        'note': declineMessage,
+    };
+
     final batch = FirebaseFirestore.instance.batch();
     for (final task in widget.tasks) {
       if (!task.hasQuote) continue;
@@ -343,6 +389,7 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
       final fields = <String, dynamic>{
         'quoteStatus': status,
         'quoteResolvedAt': FieldValue.serverTimestamp(),
+        'quoteHistory': FieldValue.arrayUnion([historyEntry]),
       };
 
       // Save agreed figures when approved
