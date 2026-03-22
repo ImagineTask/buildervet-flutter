@@ -9,7 +9,7 @@ class ScheduleWorkAction extends BaseActionTile {
   IconData get icon => Icons.calendar_month_outlined;
 
   @override
-  String get label => 'Schedule\nWork';
+  String get label => 'Schedule';
 
   @override
   Color get color => const Color(0xFF6C63FF);

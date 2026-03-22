@@ -24,7 +24,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  // ── Local mutable copy of the task ────────────────────────────────────────
   late TaskModel _task;
 
   bool _editMode = false;
@@ -66,11 +65,22 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   List<String> get _actionSpace =>
       List<String>.from(_task.metadata['actionSpace'] ?? []);
 
+  // ── Date formatters ───────────────────────────────────────────────────────
+
   String _formatDateTime(String? iso) {
     if (iso == null) return '—';
     try {
       return DateFormat('d MMM yyyy · HH:mm').format(DateTime.parse(iso).toLocal());
     } catch (_) { return '—'; }
+  }
+
+  // Formats a scheduled date ISO string as "6 Apr 2026"
+  String _formatScheduledDate(dynamic iso) {
+    try {
+      return DateFormat('d MMM yyyy').format(DateTime.parse(iso.toString()).toLocal());
+    } catch (_) {
+      return iso.toString();
+    }
   }
 
   @override
@@ -103,7 +113,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     super.dispose();
   }
 
-  // ── Reload task from Firestore after returning from schedule page ──────────
   Future<void> _reloadTask() async {
     try {
       final snap = await FirebaseFirestore.instance
@@ -239,8 +248,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  // ── App Bar ───────────────────────────────────────────────────────────────
-
   SliverAppBar _buildAppBar() {
     return SliverAppBar(
       expandedHeight: 110,
@@ -286,8 +293,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       ),
     );
   }
-
-  // ── FAB ───────────────────────────────────────────────────────────────────
 
   Widget _buildFab() {
     if (_editMode) {
@@ -415,8 +420,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  // ── Status Banner ─────────────────────────────────────────────────────────
-
   Widget _buildStatusBanner() {
     final taskOrder = _task.metadata['taskOrder'];
     return Container(
@@ -468,8 +471,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  // ── Description ───────────────────────────────────────────────────────────
-
   Widget _buildDescriptionSection() {
     return _SectionCard(
       title: 'Description',
@@ -499,8 +500,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
             ),
     );
   }
-
-  // ── Price ─────────────────────────────────────────────────────────────────
 
   Widget _buildPriceSection() {
     final hasQuote = _task.hasQuote;
@@ -548,7 +547,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
               ),
             ),
             const SizedBox(height: 12),
-
             if (hasQuote) ...[
               Container(
                 padding: const EdgeInsets.all(12),
@@ -672,10 +670,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  // ── Assigned Builder ──────────────────────────────────────────────────────
-  // Uses assignedBuilderIds which is saved by TaskScheduleDetailPage.
-  // Fetches each builder's name from the users collection.
-
   Widget _buildAssignedBuilderSection() {
     final builderIds = _task.assignedBuilderIds;
     final scheduledDates =
@@ -736,8 +730,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                           color: const Color(0xFF43C59E).withOpacity(0.06),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                              color:
-                                  const Color(0xFF43C59E).withOpacity(0.2)),
+                              color: const Color(0xFF43C59E).withOpacity(0.2)),
                         ),
                         child: Row(
                           children: [
@@ -807,7 +800,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                                     .withOpacity(0.2)),
                           ),
                           child: Text(
-                            date.toString(),
+                            _formatScheduledDate(date), // ← formatted date only
                             style: const TextStyle(
                                 fontSize: 11,
                                 color: Color(0xFF6C63FF),
@@ -822,8 +815,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       ),
     );
   }
-
-  // ── Negotiation ───────────────────────────────────────────────────────────
 
   Widget _buildNegotiationSection() {
     return _SectionCard(
@@ -909,8 +900,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  // ── Action Space ──────────────────────────────────────────────────────────
-
   Widget _buildActionSpaceSection() {
     final actionMeta = <String, _ActionMeta>{
       'accept_task': _ActionMeta(
@@ -965,8 +954,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       ),
     );
   }
-
-  // ── Audit ─────────────────────────────────────────────────────────────────
 
   Widget _buildAuditSection() {
     return Padding(

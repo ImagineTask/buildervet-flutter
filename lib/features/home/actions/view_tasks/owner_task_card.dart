@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../../models/task_model.dart';
 import 'task_detail_page.dart';
 
@@ -22,10 +23,10 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
   Map<String, dynamic> get _negotiation =>
       Map<String, dynamic>.from(widget.task.metadata['negotiation'] ?? {});
 
-  int get _scheduledDays {
+  List<String> get _scheduledDates {
     final dates = widget.task.metadata['scheduledDates'];
-    if (dates == null) return 0;
-    return (dates as List).length;
+    if (dates == null) return [];
+    return List<String>.from(dates as List);
   }
 
   Color get _statusColor {
@@ -59,6 +60,15 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
         return 'Denied';
       default:
         return widget.task.status;
+    }
+  }
+
+  String _formatScheduledDate(String iso) {
+    try {
+      final date = DateTime.parse(iso).toLocal();
+      return DateFormat('d MMM').format(date);
+    } catch (_) {
+      return iso;
     }
   }
 
@@ -260,6 +270,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
   @override
   Widget build(BuildContext context) {
     final task = widget.task;
+    final dates = _scheduledDates;
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -350,42 +361,104 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
 
                   // Assigned builders
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.person_outline,
-                          size: 13, color: Colors.grey[400]),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Icon(Icons.person_outline,
+                            size: 13, color: Colors.grey[400]),
+                      ),
                       const SizedBox(width: 6),
-                      task.assignedBuilderIds.isNotEmpty
-                          ? Text(
-                              '${task.assignedBuilderIds.length} builder(s) assigned',
+                      task.assignedBuilderIds.isEmpty
+                          ? Text('No builder assigned',
                               style: TextStyle(
-                                  fontSize: 12, color: Colors.grey[500]),
-                            )
-                          : Text('No builder assigned',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.orange[400])),
+                                  fontSize: 12, color: Colors.orange[400]))
+                          : Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: task.assignedBuilderIds
+                                    .map((id) => FutureBuilder<DocumentSnapshot>(
+                                          future: FirebaseFirestore.instance
+                                              .collection('users')
+                                              .doc(id)
+                                              .get(),
+                                          builder: (context, snapshot) {
+                                            final name = snapshot.hasData &&
+                                                    snapshot.data!.exists
+                                                ? (snapshot.data!.data()
+                                                        as Map<String,
+                                                            dynamic>)['name']
+                                                    as String? ??
+                                                    id
+                                                : id;
+                                            return Text(
+                                              name,
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[500]),
+                                            );
+                                          },
+                                        ))
+                                    .toList(),
+                              ),
+                            ),
                     ],
                   ),
                   const SizedBox(height: 6),
 
-                  // Scheduled days
-                  Row(
-                    children: [
-                      Icon(Icons.calendar_today_outlined,
-                          size: 13, color: Colors.grey[400]),
-                      const SizedBox(width: 6),
-                      _scheduledDays > 0
-                          ? Text(
-                              '$_scheduledDays working day${_scheduledDays > 1 ? 's' : ''} scheduled',
+                  // ── Scheduled dates as chips ───────────────────────────
+                  if (dates.isEmpty)
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today_outlined,
+                            size: 13, color: Colors.grey[400]),
+                        const SizedBox(width: 6),
+                        Text('Not scheduled',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.orange[400])),
+                      ],
+                    )
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.calendar_today_outlined,
+                                size: 13, color: Colors.grey[400]),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${dates.length} working day${dates.length > 1 ? 's' : ''}',
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey[500]),
-                            )
-                          : Text('Not scheduled',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.orange[400])),
-                    ],
-                  ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: dates.map((iso) => Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6C63FF).withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                  color: const Color(0xFF6C63FF)
+                                      .withOpacity(0.2)),
+                            ),
+                            child: Text(
+                              _formatScheduledDate(iso),
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Color(0xFF6C63FF),
+                                  fontWeight: FontWeight.w500),
+                            ),
+                          )).toList(),
+                        ),
+                      ],
+                    ),
                   const SizedBox(height: 6),
 
                   // Guide price range
@@ -408,7 +481,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     if (task.agreedTotal != null &&
                         task.agreedTotal! > 0 &&
                         task.quoteTotal != task.agreedTotal) ...[
-                      // New quote
                       Row(
                         children: [
                           Icon(Icons.fiber_new_rounded,
@@ -428,7 +500,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                         ],
                       ),
                     ] else ...[
-                      // Quote == Agreed
                       Row(
                         children: [
                           Icon(Icons.check_circle_outline,
@@ -449,7 +520,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                       ),
                     ],
 
-                    // Decline reason if any
                     if (task.quoteStatus == 'declined' &&
                         task.quoteDeclineReason != null &&
                         task.quoteDeclineReason!.isNotEmpty) ...[
@@ -490,7 +560,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Negotiation header
                     Row(
                       children: [
                         const Icon(Icons.handshake_outlined,
@@ -515,7 +584,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Fee comparison
                     Row(
                       children: [
                         Expanded(
@@ -543,7 +611,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Reason
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(10),
@@ -570,7 +637,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Action buttons
                     Row(
                       children: [
                         Expanded(
@@ -677,8 +743,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
         color: highlight ? color.withOpacity(0.1) : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color:
-              highlight ? color.withOpacity(0.3) : Colors.grey.shade200,
+          color: highlight ? color.withOpacity(0.3) : Colors.grey.shade200,
         ),
       ),
       child: Column(
@@ -751,7 +816,6 @@ class _PriceColumn extends StatelessWidget {
     );
   }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // _QuoteStatusBadge — compact inline badge
@@ -862,8 +926,7 @@ class _QuoteStatusRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   declineReason!,
-                  style:
-                      TextStyle(fontSize: 11, color: Colors.grey[500]),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                 ),
               ),
             ],
