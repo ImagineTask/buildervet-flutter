@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'features/Home/home_screen.dart';
 import 'features/Network/network_screen.dart';
@@ -9,12 +10,14 @@ import 'features/Chat/chat_screen.dart';
 import 'features/Alert/alert_screen.dart';
 import 'features/auth/auth_screen.dart';
 import 'features/Home/state/project_selection_state.dart';
+import 'features/Home/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  await NotificationService.init();
   runApp(const MyApp());
 }
 
@@ -55,8 +58,6 @@ class AuthGate extends StatelessWidget {
           );
         }
         if (snapshot.hasData) {
-          // ── ProjectSelectionState wraps MainNavigation so the selected
-          //    project persists across all tabs and navigation events ──────
           return const ProjectSelectionState(
             child: MainNavigation(),
           );
@@ -87,6 +88,18 @@ class _MainNavigationState extends State<MainNavigation> {
     AlertScreen(),
   ];
 
+  Stream<int> _unreadAlertCount() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
+    return FirebaseFirestore.instance
+        .collection('alerts')
+        .doc(uid)
+        .collection('items')
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .map((snap) => snap.docs.length);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,15 +121,21 @@ class _MainNavigationState extends State<MainNavigation> {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home', index: 0, currentIndex: _currentIndex, onTap: _onTap),
-                _NavItem(icon: Icons.people_outline, activeIcon: Icons.people_rounded, label: 'Network', index: 1, currentIndex: _currentIndex, onTap: _onTap),
-                _NavItem(icon: Icons.calendar_today_outlined, activeIcon: Icons.calendar_today_rounded, label: 'Calendar', index: 2, currentIndex: _currentIndex, onTap: _onTap),
-                _NavItem(icon: Icons.chat_bubble_outline, activeIcon: Icons.chat_bubble_rounded, label: 'Chat', index: 3, currentIndex: _currentIndex, onTap: _onTap, badge: 11),
-                _NavItem(icon: Icons.notifications_outlined, activeIcon: Icons.notifications_rounded, label: 'Alert', index: 4, currentIndex: _currentIndex, onTap: _onTap, badge: 3),
-              ],
+            child: StreamBuilder<int>(
+              stream: _unreadAlertCount(),
+              builder: (context, snapshot) {
+                final alertBadge = snapshot.data ?? 0;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home', index: 0, currentIndex: _currentIndex, onTap: _onTap),
+                    _NavItem(icon: Icons.people_outline, activeIcon: Icons.people_rounded, label: 'Network', index: 1, currentIndex: _currentIndex, onTap: _onTap),
+                    _NavItem(icon: Icons.calendar_today_outlined, activeIcon: Icons.calendar_today_rounded, label: 'Calendar', index: 2, currentIndex: _currentIndex, onTap: _onTap),
+                    _NavItem(icon: Icons.chat_bubble_outline, activeIcon: Icons.chat_bubble_rounded, label: 'Chat', index: 3, currentIndex: _currentIndex, onTap: _onTap, badge: 11),
+                    _NavItem(icon: Icons.notifications_outlined, activeIcon: Icons.notifications_rounded, label: 'Alert', index: 4, currentIndex: _currentIndex, onTap: _onTap, badge: alertBadge),
+                  ],
+                );
+              },
             ),
           ),
         ),

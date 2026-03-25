@@ -1,97 +1,281 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-class AlertScreen extends StatefulWidget {
+class AlertScreen extends StatelessWidget {
   const AlertScreen({super.key});
 
-  @override
-  State<AlertScreen> createState() => _AlertScreenState();
-}
+  Stream<List<_Alert>> _alertStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
 
-class _AlertScreenState extends State<AlertScreen> {
-  final List<_Alert> _alerts = [
-    _Alert(title: 'Storage Almost Full', description: 'Your storage is at 80% capacity. Consider freeing up space.', time: '5 min ago', type: AlertType.warning, isRead: false),
-    _Alert(title: 'New Login Detected', description: 'A new login was detected from Chrome on Windows.', time: '30 min ago', type: AlertType.security, isRead: false),
-    _Alert(title: 'Meeting Starting Soon', description: 'Team Sync Meeting starts in 15 minutes.', time: '1 hour ago', type: AlertType.info, isRead: false),
-    _Alert(title: 'Password Expiring', description: 'Your password will expire in 3 days. Please update it.', time: '2 hours ago', type: AlertType.warning, isRead: true),
-    _Alert(title: 'Backup Successful', description: 'Your data has been backed up successfully.', time: 'Yesterday', type: AlertType.success, isRead: true),
-    _Alert(title: 'System Update Available', description: 'Version 4.2.1 is available. Update now for the latest features.', time: 'Yesterday', type: AlertType.info, isRead: true),
-    _Alert(title: 'Failed Login Attempt', description: '3 failed login attempts were detected on your account.', time: '2 days ago', type: AlertType.error, isRead: true),
-  ];
+    return FirebaseFirestore.instance
+        .collection('alerts')
+        .doc(uid)
+        .collection('items')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) {
+              final d = doc.data();
+              return _Alert(
+                id: doc.id,
+                title: d['title'] ?? '',
+                description: d['description'] ?? '',
+                time: _formatTime(d['createdAt']),
+                type: _parseType(d['type']),
+                isRead: d['isRead'] ?? false,
+              );
+            }).toList());
+  }
+
+  static String _formatTime(dynamic ts) {
+    if (ts == null) return '';
+    final dt = (ts as Timestamp).toDate();
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
+    if (diff.inDays == 1) return 'Yesterday';
+    return '${diff.inDays} days ago';
+  }
+
+  static AlertType _parseType(String? type) {
+    switch (type) {
+      case 'warning': return AlertType.warning;
+      case 'error': return AlertType.error;
+      case 'success': return AlertType.success;
+      case 'security': return AlertType.security;
+      default: return AlertType.info;
+    }
+  }
+
+  Future<void> _markAsRead(String uid, String docId) async {
+    await FirebaseFirestore.instance
+        .collection('alerts')
+        .doc(uid)
+        .collection('items')
+        .doc(docId)
+        .update({'isRead': true});
+  }
+
+  Future<void> _markAllRead(String uid, List<_Alert> alerts) async {
+    final batch = FirebaseFirestore.instance.batch();
+    for (final alert in alerts.where((a) => !a.isRead)) {
+      final ref = FirebaseFirestore.instance
+          .collection('alerts')
+          .doc(uid)
+          .collection('items')
+          .doc(alert.id);
+      batch.update(ref, {'isRead': true});
+    }
+    await batch.commit();
+  }
+
+  Future<void> _deleteAlert(String uid, String docId) async {
+    await FirebaseFirestore.instance
+        .collection('alerts')
+        .doc(uid)
+        .collection('items')
+        .doc(docId)
+        .delete();
+  }
+
+  Future<void> _deleteAll(BuildContext context, String uid, List<_Alert> alerts) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Clear All Notifications',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+        ),
+        content: const Text(
+          'Are you sure you want to delete all notifications? This cannot be undone.',
+          style: TextStyle(color: Colors.grey),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF6B6B),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Delete All'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (final alert in alerts) {
+      final ref = FirebaseFirestore.instance
+          .collection('alerts')
+          .doc(uid)
+          .collection('items')
+          .doc(alert.id);
+      batch.delete(ref);
+    }
+    await batch.commit();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final unread = _alerts.where((a) => !a.isRead).length;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        child: StreamBuilder<List<_Alert>>(
+          stream: _alertStream(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(
+                child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Something went wrong',
+                  style: TextStyle(color: Colors.grey[500]),
+                ),
+              );
+            }
+
+            final alerts = snapshot.data ?? [];
+            final unread = alerts.where((a) => !a.isRead).length;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Alerts',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1A1A2E),
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Alerts',
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1A1A2E),
+                            ),
+                          ),
+                          if (unread > 0)
+                            Text(
+                              '$unread unread notifications',
+                              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                            ),
+                        ],
                       ),
-                      if (unread > 0)
-                        Text(
-                          '$unread unread notifications',
-                          style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                      // Action buttons row
+                      if (alerts.isNotEmpty && uid != null)
+                        Row(
+                          children: [
+                            if (unread > 0)
+                              TextButton(
+                                onPressed: () => _markAllRead(uid, alerts),
+                                child: const Text(
+                                  'Mark all read',
+                                  style: TextStyle(
+                                    color: Color(0xFF6C63FF),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            IconButton(
+                              onPressed: () => _deleteAll(context, uid, alerts),
+                              icon: const Icon(Icons.delete_sweep_outlined),
+                              color: const Color(0xFFFF6B6B),
+                              tooltip: 'Clear all',
+                            ),
+                          ],
                         ),
                     ],
                   ),
-                  if (unread > 0)
-                    TextButton(
-                      onPressed: () => setState(() {
-                        for (var a in _alerts) a.isRead = true;
-                      }),
-                      child: const Text(
-                        'Mark all read',
-                        style: TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: _alerts.length,
-                itemBuilder: (context, index) => _AlertCard(
-                  alert: _alerts[index],
-                  onTap: () => setState(() => _alerts[index].isRead = true),
                 ),
-              ),
-            ),
-          ],
+                const SizedBox(height: 16),
+                Expanded(
+                  child: alerts.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.notifications_none_rounded,
+                                  size: 48, color: Colors.grey[300]),
+                              const SizedBox(height: 12),
+                              Text(
+                                'No notifications yet',
+                                style: TextStyle(color: Colors.grey[400], fontSize: 15),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: alerts.length,
+                          itemBuilder: (context, index) {
+                            final alert = alerts[index];
+                            return Dismissible(
+                              key: Key(alert.id),
+                              direction: DismissDirection.endToStart,
+                              onDismissed: (_) {
+                                if (uid != null) _deleteAlert(uid, alert.id);
+                              },
+                              background: Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.only(right: 20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFF6B6B),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                alignment: Alignment.centerRight,
+                                child: const Icon(Icons.delete_outline,
+                                    color: Colors.white, size: 24),
+                              ),
+                              child: _AlertCard(
+                                alert: alert,
+                                onTap: uid != null
+                                    ? () => _markAsRead(uid, alert.id)
+                                    : null,
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 }
 
+// ── Models ────────────────────────────────────────────────────────────────────
+
 enum AlertType { warning, error, success, info, security }
 
 class _Alert {
+  final String id;
   final String title;
   final String description;
   final String time;
   final AlertType type;
-  bool isRead;
+  final bool isRead;
 
-  _Alert({
+  const _Alert({
+    required this.id,
     required this.title,
     required this.description,
     required this.time,
@@ -99,6 +283,8 @@ class _Alert {
     required this.isRead,
   });
 }
+
+// ── Extensions ────────────────────────────────────────────────────────────────
 
 extension _AlertTypeExtension on AlertType {
   Color get color {
@@ -132,11 +318,13 @@ extension _AlertTypeExtension on AlertType {
   }
 }
 
+// ── Alert Card ────────────────────────────────────────────────────────────────
+
 class _AlertCard extends StatelessWidget {
   final _Alert alert;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
-  const _AlertCard({required this.alert, required this.onTap});
+  const _AlertCard({required this.alert, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +404,11 @@ class _AlertCard extends StatelessWidget {
                         ),
                         child: Text(
                           alert.type.label,
-                          style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: color,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),

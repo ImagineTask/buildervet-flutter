@@ -9,6 +9,7 @@ import '../actions/customised/custom_tile_service.dart';
 import '../actions/customised/custom_tile_model.dart';
 import '../actions/customised/custom_tile_widget.dart';
 import '../state/project_selection_state.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProjectsContent extends StatefulWidget {
   const ProjectsContent({super.key});
@@ -42,7 +43,14 @@ class _ProjectsContentState extends State<ProjectsContent> {
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ConfirmSelectionSheet(project: project),
+      builder: (_) => _ConfirmSelectionSheet(
+        project: project,
+        onDeleted: () {
+          if (_selection.selectedProjectId == project.taskId) {
+            _selection.clear();
+          }
+        },
+      ),
     );
     if (confirmed == true) {
       _selection.select(project.taskId);
@@ -210,7 +218,6 @@ class _SelectedProjectView extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Selected Project pill
             Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -244,7 +251,6 @@ class _SelectedProjectView extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // Action grid
             const Text(
               'Actions',
               style: TextStyle(
@@ -261,23 +267,17 @@ class _SelectedProjectView extends StatelessWidget {
               mainAxisSpacing: 10,
               childAspectRatio: 1,
               children: [
-                // System actions (from Firestore actionSpace)
                 ...systemActions,
-
-                // Custom tiles directly in grid
                 ...customTiles.map((tile) => CustomTileWidget(
                       tile: tile,
                       projectId: project.id,
                       service: customTileService,
                     )),
-
-                // Always last: + Customise tile
                 CustomisedAction(project: project),
               ],
             ),
             const SizedBox(height: 20),
 
-            // Switch project button
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -304,18 +304,166 @@ class _SelectedProjectView extends StatelessWidget {
 // ─────────────────────────────────────────────
 // Confirm Selection Bottom Sheet
 // ─────────────────────────────────────────────
-class _ConfirmSelectionSheet extends StatelessWidget {
+class _ConfirmSelectionSheet extends StatefulWidget {
   final TaskModel project;
-  const _ConfirmSelectionSheet({required this.project});
+  final VoidCallback onDeleted;
+
+  const _ConfirmSelectionSheet({
+    required this.project,
+    required this.onDeleted,
+  });
+
+  @override
+  State<_ConfirmSelectionSheet> createState() =>
+      _ConfirmSelectionSheetState();
+}
+
+class _ConfirmSelectionSheetState extends State<_ConfirmSelectionSheet> {
+  bool _deleting = false;
 
   Color get _statusColor {
-    switch (project.status) {
+    switch (widget.project.status) {
       case 'active':
         return const Color(0xFF6C63FF);
       case 'done':
         return const Color(0xFF43C59E);
       default:
         return const Color(0xFFFFB347);
+    }
+  }
+
+  // Deletes all known subcollections of a task doc, then the doc itself
+  Future<void> _deleteDocWithSubcollections(DocumentReference ref) async {
+    const subcollections = ['events']; // add more here if needed
+
+    for (final sub in subcollections) {
+      final subSnap = await ref.collection(sub).get();
+      if (subSnap.docs.isEmpty) continue;
+
+      const batchSize = 499;
+      final docs = subSnap.docs;
+      for (var i = 0; i < docs.length; i += batchSize) {
+        final batch = FirebaseFirestore.instance.batch();
+        final chunk = docs.skip(i).take(batchSize);
+        for (final doc in chunk) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      }
+    }
+
+    await ref.delete();
+  }
+
+  Future<void> _deleteProject() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Delete Project?',
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to delete "${widget.project.taskName}"?',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B6B).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: const Color(0xFFFF6B6B).withOpacity(0.3)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded,
+                      size: 16, color: Color(0xFFFF6B6B)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'This will permanently delete the project and all its tasks. This cannot be undone.',
+                      style: TextStyle(
+                          fontSize: 12, color: Color(0xFFFF6B6B)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.grey)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFFF6B6B),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _deleting = true);
+
+    try {
+      final db = FirebaseFirestore.instance;
+
+      // Fetch all child tasks linked to this project
+      final childTasks = await db
+          .collection('tasks')
+          .where('parentTaskId', isEqualTo: widget.project.taskId)
+          .get();
+
+      // Delete each child task with its subcollections
+      for (final taskDoc in childTasks.docs) {
+        await _deleteDocWithSubcollections(taskDoc.reference);
+      }
+
+      // Delete the project task itself with its subcollections
+      await _deleteDocWithSubcollections(
+        db.collection('tasks').doc(widget.project.taskId),
+      );
+
+      widget.onDeleted();
+
+      if (mounted) {
+        Navigator.of(context).pop(false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '"${widget.project.taskName}" and its tasks have been deleted.'),
+            backgroundColor: const Color(0xFF43C59E),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _deleting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to delete project. Try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -331,6 +479,7 @@ class _ConfirmSelectionSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Drag handle
           Center(
             child: Container(
               width: 40,
@@ -341,6 +490,8 @@ class _ConfirmSelectionSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
+
+          // Project name + status dot
           Row(
             children: [
               Container(
@@ -350,24 +501,31 @@ class _ConfirmSelectionSheet extends StatelessWidget {
                       color: _statusColor, shape: BoxShape.circle)),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(project.taskName,
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1A1A2E))),
+                child: Text(
+                  widget.project.taskName,
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF1A1A2E)),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          Text(project.description,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 13, color: Colors.grey[500])),
+          Text(
+            widget.project.description,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+          ),
           const SizedBox(height: 24),
+
+          // Select button
           SizedBox(
             width: double.infinity,
             child: FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
+              onPressed:
+                  _deleting ? null : () => Navigator.of(context).pop(true),
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFF6C63FF),
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -378,10 +536,42 @@ class _ConfirmSelectionSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
+
+          // Delete button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _deleting ? null : _deleteProject,
+              icon: _deleting
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Color(0xFFFF6B6B)),
+                    )
+                  : const Icon(Icons.delete_outline,
+                      size: 16, color: Color(0xFFFF6B6B)),
+              label: Text(
+                _deleting ? 'Deleting...' : 'Delete Project',
+                style: const TextStyle(color: Color(0xFFFF6B6B)),
+              ),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                side: BorderSide(
+                    color: const Color(0xFFFF6B6B).withOpacity(0.5)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Cancel button
           SizedBox(
             width: double.infinity,
             child: TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
+              onPressed:
+                  _deleting ? null : () => Navigator.of(context).pop(false),
               child: const Text('Cancel',
                   style: TextStyle(color: Colors.grey)),
             ),

@@ -38,7 +38,6 @@ class _SendQuotePageState extends State<SendQuotePage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return [];
 
-    // Get current user's contacts array
     final userDoc = await FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
@@ -48,7 +47,6 @@ class _SendQuotePageState extends State<SendQuotePage> {
 
     if (contacts.isEmpty) return [];
 
-    // Fetch each contact and filter by role == 'homeowner'
     final futures = contacts.map((contactUid) =>
         FirebaseFirestore.instance
             .collection('users')
@@ -70,18 +68,30 @@ class _SendQuotePageState extends State<SendQuotePage> {
     setState(() => _sending = true);
 
     try {
+      print('🔍 projectId: ${widget.projectId}');
+      print('🔍 selectedUid: $_selectedUid');
+
       // Get all tasks under this project
       final tasksSnap = await FirebaseFirestore.instance
           .collection('tasks')
           .where('parentTaskId', isEqualTo: widget.projectId)
           .where('taskType', isEqualTo: 'task')
-          .get();
+          .get(const GetOptions(source: Source.server));
 
-      // Also add to the project task itself
+      print('🔍 child tasks found: ${tasksSnap.docs.length}');
+
+      // Also update the project task itself — force server fetch
       final projectSnap = await FirebaseFirestore.instance
           .collection('tasks')
           .doc(widget.projectId)
-          .get();
+          .get(const GetOptions(source: Source.server));
+
+      print('🔍 projectSnap.exists: ${projectSnap.exists}');
+      print('🔍 projectSnap.id: ${projectSnap.id}');
+      if (projectSnap.exists) {
+        print('🔍 projectSnap taskType: ${projectSnap.data()?['taskType']}');
+        print('🔍 projectSnap participantIds: ${projectSnap.data()?['participantIds']}');
+      }
 
       final batch = FirebaseFirestore.instance.batch();
 
@@ -95,30 +105,37 @@ class _SendQuotePageState extends State<SendQuotePage> {
         }
       }
 
-      // Add homeowner to the project task
+      // Add homeowner to the project task + always update quoteLastSentAt
       if (projectSnap.exists) {
         final current = List<String>.from(
             projectSnap.data()?['participantIds'] ?? []);
         if (!current.contains(_selectedUid)) {
           current.add(_selectedUid!);
-          batch.update(projectSnap.reference,
-              {'participantIds': current});
         }
+        print('🔍 writing quoteLastSentAt and quoteLastSentTo to project doc...');
+        batch.update(projectSnap.reference, {
+          'participantIds': current,
+          'quoteLastSentAt': FieldValue.serverTimestamp(),
+          'quoteLastSentTo': _selectedUid,
+        });
+      } else {
+        print('❌ projectSnap does NOT exist — skipping project update!');
       }
 
       await batch.commit();
+      print('✅ batch committed');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content:
-                Text('Quote sent to $_selectedName'),
+            content: Text('Quote sent to $_selectedName'),
             backgroundColor: const Color(0xFF43C59E),
           ),
         );
         Navigator.pop(context);
       }
-    } catch (_) {
+    } catch (e) {
+      print('❌ Error in _send: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -169,7 +186,6 @@ class _SendQuotePageState extends State<SendQuotePage> {
             return const _EmptyContacts();
           }
 
-          // Filter by search
           final filtered = _searchQuery.isEmpty
               ? homeowners
               : homeowners
