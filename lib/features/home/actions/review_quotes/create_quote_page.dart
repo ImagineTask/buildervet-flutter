@@ -2,20 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'quote_models.dart';
+import 'send_quote_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CreateQuotePage
 //
 // Builder fills in material + labour per task.
-// On Send → batch writes quote fields to all tasks/{taskId} documents.
-// First quote  → labour defaults to guidePrice, material to 0
-// Update quote → pre-fills from existing quoteMaterial / quoteLabour
+// On Send → opens SendQuotePage to pick a homeowner first,
+// then batch writes quote fields + participantIds + project-level history
+// in one single commit.
 // ─────────────────────────────────────────────────────────────────────────────
 
 class CreateQuotePage extends StatefulWidget {
   final String projectId;
   final String projectName;
-  final List<TaskItem>? existingTasks; // non-null when updating
+  final List<TaskItem>? existingTasks;
 
   const CreateQuotePage({
     super.key,
@@ -57,7 +58,6 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
       ..sort((a, b) => a.taskOrder.compareTo(b.taskOrder));
 
     for (final task in tasks) {
-      // Pre-fill from existing quote or default to guidePrice/0
       final existingMaterial =
           task.quoteMaterial?.toStringAsFixed(0) ?? '0';
       final existingLabour = task.quoteLabour?.toStringAsFixed(0) ??
@@ -101,10 +101,11 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
     setState(() => _total = sum);
   }
 
-  Future<void> _submit() async {
+  // ── Step 1: validate → optional reason → pick homeowner → submit ──────────
+  Future<void> _onSendTapped() async {
     if (!_formKey.currentState!.validate()) return;
 
-    // Show note dialog when updating an existing quote
+    // Show update reason dialog if updating an existing quote
     if (widget.existingTasks != null) {
       _reasonController.clear();
       final confirmed = await showDialog<bool>(
@@ -136,13 +137,11 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
                       TextStyle(color: Colors.grey[400], fontSize: 13),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide:
-                        BorderSide(color: Colors.grey.shade300),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide:
-                        BorderSide(color: Colors.grey.shade300),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -167,7 +166,7 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
-              child: const Text('Send'),
+              child: const Text('Continue'),
             ),
           ],
         ),
@@ -175,6 +174,26 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
       if (confirmed != true) return;
     }
 
+    // Navigate to SendQuotePage in selection mode
+    if (!mounted) return;
+    final selection = await Navigator.push<HomeownerSelection>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SendQuotePage(
+          projectId: widget.projectId,
+          selectionMode: true,
+        ),
+      ),
+    );
+
+    if (selection == null) return;
+    await _submitWithHomeowner(selection.uid, selection.name);
+  }
+
+  // ── Step 2: single batch — quote fields + participantIds +
+  //           project-level history entry with correct total ────────────────
+  Future<void> _submitWithHomeowner(
+      String homeownerUid, String homeownerName) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -186,31 +205,40 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
         (userDoc.data()?['name'] as String?) ?? 'Unknown Builder';
 
     setState(() => _loading = true);
-    try {
-      final batch = FirebaseFirestore.instance.batch();
-      for (final task in _tasks) {
-        final material = double.tryParse(
-                _materialControllers[task.taskId]!.text.trim()) ??
-            0;
-        final labour = double.tryParse(
-                _labourControllers[task.taskId]!.text.trim()) ??
-            0;
-        final ref = FirebaseFirestore.instance
-            .collection('tasks')
-            .doc(task.taskId);
-        final reason = widget.existingTasks != null
-            ? _reasonController.text.trim()
-            : null;
 
-        final historyEntry = {
-          'type': 'submitted',
-          'material': material,
-          'labour': labour,
-          'total': material + labour,
-          'submittedAt': DateTime.now().toIso8601String(),
-          'actorName': builderName,
-          if (reason != null && reason.isNotEmpty) 'note': reason,
-        };
+    try {
+      final db = FirebaseFirestore.instance;
+      final batch = db.batch();
+      final reason = widget.existingTasks != null
+          ? _reasonController.text.trim()
+          : null;
+
+      // ── Calculate totals across ALL tasks ─────────────────────────────
+      double totalMaterial = 0;
+      double totalLabour = 0;
+      for (final task in _tasks) {
+        totalMaterial +=
+            double.tryParse(_materialControllers[task.taskId]!.text.trim()) ??
+                0;
+        totalLabour +=
+            double.tryParse(_labourControllers[task.taskId]!.text.trim()) ?? 0;
+      }
+
+      // ── Child tasks: quote fields + add homeowner to participantIds ────
+      for (final task in _tasks) {
+        final material =
+            double.tryParse(_materialControllers[task.taskId]!.text.trim()) ??
+                0;
+        final labour =
+            double.tryParse(_labourControllers[task.taskId]!.text.trim()) ?? 0;
+
+        final ref = db.collection('tasks').doc(task.taskId);
+
+        final currentParticipants =
+            List<String>.from(task.participantIds);
+        if (!currentParticipants.contains(homeownerUid)) {
+          currentParticipants.add(homeownerUid);
+        }
 
         final fields = <String, dynamic>{
           'quoteBuilderId': user.uid,
@@ -220,25 +248,63 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
           'quoteTotal': material + labour,
           'quoteStatus': 'pending',
           'quoteSubmittedAt': FieldValue.serverTimestamp(),
-          'quoteHistory': FieldValue.arrayUnion([historyEntry]),
+          'participantIds': currentParticipants,
         };
+
         if (reason != null) {
           fields['quoteUpdateReason'] = reason.isEmpty ? null : reason;
         }
+
         batch.update(ref, fields);
       }
+
+      // ── Project task: participantIds + quoteLastSentAt +
+      //                 project-level history (true total snapshot) ───────
+      final projectSnap = await db
+          .collection('tasks')
+          .doc(widget.projectId)
+          .get(const GetOptions(source: Source.server));
+
+      if (projectSnap.exists) {
+        final current = List<String>.from(
+            projectSnap.data()?['participantIds'] ?? []);
+        if (!current.contains(homeownerUid)) {
+          current.add(homeownerUid);
+        }
+
+        // Project-level history entry — total is sum of ALL tasks
+        final projectHistoryEntry = <String, dynamic>{
+          'type': 'submitted',
+          'material': totalMaterial,
+          'labour': totalLabour,
+          'total': totalMaterial + totalLabour,
+          'submittedAt': DateTime.now().toIso8601String(),
+          'actorName': builderName,
+          'sentTo': homeownerUid,
+          'sentToName': homeownerName,
+          if (reason != null && reason.isNotEmpty) 'note': reason,
+        };
+
+        batch.update(projectSnap.reference, {
+          'participantIds': current,
+          'quoteLastSentAt': FieldValue.serverTimestamp(),
+          'quoteLastSentTo': homeownerUid,
+          'quoteHistory': FieldValue.arrayUnion([projectHistoryEntry]),
+        });
+      }
+
       await batch.commit();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Quote sent successfully'),
-            backgroundColor: Color(0xFF43C59E),
+          SnackBar(
+            content: Text('Quote sent to $homeownerName'),
+            backgroundColor: const Color(0xFF43C59E),
           ),
         );
         Navigator.pop(context);
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -270,11 +336,10 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
       key: _formKey,
       child: Column(
         children: [
-          // Live total bar
           Container(
             color: Colors.white,
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 14),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             child: Row(
               children: [
                 const Expanded(
@@ -321,15 +386,14 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
                     child: _SendButton(
                       total: _total,
                       loading: _loading,
-                      onTap: _submit,
+                      onTap: _onSendTapped,
                     ),
                   );
                 }
                 final task = _tasks[index];
                 return _TaskInputCard(
                   task: task,
-                  materialController:
-                      _materialControllers[task.taskId]!,
+                  materialController: _materialControllers[task.taskId]!,
                   labourController: _labourControllers[task.taskId]!,
                 );
               },
@@ -355,7 +419,8 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
             ),
             const Text(
               'Create Quote',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+              style:
+                  TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
             ),
           ],
         ),

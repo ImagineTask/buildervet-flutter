@@ -8,12 +8,6 @@ import 'send_quote_page.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QuoteCard
-//
-// One card for the entire project quote.
-// Shows: builder name, total amount, status.
-// Builder  → Send Quote + Update Quote
-// Homeowner → Approve + Decline (updates all tasks in batch)
-// Tap card  → QuoteDetailPage (breakdown per task)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class QuoteCard extends StatefulWidget {
@@ -108,8 +102,7 @@ class _QuoteCardState extends State<QuoteCard> {
                     width: 46,
                     height: 46,
                     decoration: BoxDecoration(
-                      color:
-                          const Color(0xFF43C59E).withValues(alpha: 0.1),
+                      color: const Color(0xFF43C59E).withValues(alpha: 0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.person_outline,
@@ -151,8 +144,7 @@ class _QuoteCardState extends State<QuoteCard> {
                               Text(
                                 _homeownerName!,
                                 style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[500]),
+                                    fontSize: 12, color: Colors.grey[500]),
                               ),
                             ],
                           ),
@@ -163,14 +155,12 @@ class _QuoteCardState extends State<QuoteCard> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // Quote total
                       _AmountRow(
                         label: 'Quote',
                         amount: quote.total,
                         color: const Color(0xFF1A1A2E),
                       ),
                       const SizedBox(height: 4),
-                      // Agreed total
                       _AmountRow(
                         label: 'Agreed',
                         amount: quote.agreedTotal,
@@ -200,8 +190,8 @@ class _QuoteCardState extends State<QuoteCard> {
                     color: const Color(0xFFFF6B6B).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                        color: const Color(0xFFFF6B6B)
-                            .withValues(alpha: 0.3)),
+                        color:
+                            const Color(0xFFFF6B6B).withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -236,7 +226,8 @@ class _QuoteCardState extends State<QuoteCard> {
                     color: const Color(0xFFFFB347).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                        color: const Color(0xFFFFB347).withValues(alpha: 0.4)),
+                        color: const Color(0xFFFFB347)
+                            .withValues(alpha: 0.4)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -271,7 +262,8 @@ class _QuoteCardState extends State<QuoteCard> {
                               child: Text(
                                 quote.updateReason!,
                                 style: TextStyle(
-                                    fontSize: 12, color: Colors.grey[600]),
+                                    fontSize: 12,
+                                    color: Colors.grey[600]),
                               ),
                             ),
                           ],
@@ -328,6 +320,7 @@ class _QuoteCardState extends State<QuoteCard> {
                 _HomeownerActions(
                   tasks: tasks,
                   quote: quote,
+                  projectId: projectId, // ← pass projectId down
                 ),
             ],
           ),
@@ -339,13 +332,19 @@ class _QuoteCardState extends State<QuoteCard> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // _HomeownerActions — Approve + Decline, batch updates all tasks
+// + writes approval/decline to project-level history
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _HomeownerActions extends StatefulWidget {
   final List<TaskItem> tasks;
   final ProjectQuote quote;
+  final String projectId; // ← new
 
-  const _HomeownerActions({required this.tasks, required this.quote});
+  const _HomeownerActions({
+    required this.tasks,
+    required this.quote,
+    required this.projectId,
+  });
 
   @override
   State<_HomeownerActions> createState() => _HomeownerActionsState();
@@ -357,7 +356,6 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
 
   Future<void> _updateAll(String status,
       {String declineMessage = ''}) async {
-    // Fetch homeowner name for history
     final uid = FirebaseAuth.instance.currentUser?.uid;
     String actorName = 'Homeowner';
     if (uid != null) {
@@ -368,7 +366,20 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
       actorName = (userDoc.data()?['name'] as String?) ?? 'Homeowner';
     }
 
-    final historyEntry = {
+    // Project-level history entry — total is sum across ALL tasks
+    final projectHistoryEntry = <String, dynamic>{
+      'type': status == 'accepted' ? 'approved' : 'declined',
+      'material': widget.quote.totalMaterial,
+      'labour': widget.quote.totalLabour,
+      'total': widget.quote.total,
+      'submittedAt': DateTime.now().toIso8601String(),
+      'actorName': actorName,
+      if (status == 'declined' && declineMessage.isNotEmpty)
+        'note': declineMessage,
+    };
+
+    // Task-level history entry (per task)
+    final taskHistoryEntry = <String, dynamic>{
       'type': status == 'accepted' ? 'approved' : 'declined',
       'material': widget.quote.totalMaterial,
       'labour': widget.quote.totalLabour,
@@ -380,6 +391,8 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
     };
 
     final batch = FirebaseFirestore.instance.batch();
+
+    // ── Child tasks ───────────────────────────────────────────────────
     for (final task in widget.tasks) {
       if (!task.hasQuote) continue;
       final ref = FirebaseFirestore.instance
@@ -389,10 +402,9 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
       final fields = <String, dynamic>{
         'quoteStatus': status,
         'quoteResolvedAt': FieldValue.serverTimestamp(),
-        'quoteHistory': FieldValue.arrayUnion([historyEntry]),
+        'quoteHistory': FieldValue.arrayUnion([taskHistoryEntry]),
       };
 
-      // Save agreed figures when approved
       if (status == 'accepted') {
         fields['agreedMaterial'] = task.quoteMaterial ?? 0;
         fields['agreedLabour'] = task.quoteLabour ?? 0;
@@ -401,13 +413,21 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
         fields['agreedAt'] = FieldValue.serverTimestamp();
       }
 
-      // Save decline message if provided
       if (status == 'declined' && declineMessage.isNotEmpty) {
         fields['quoteDeclineReason'] = declineMessage;
       }
 
       batch.update(ref, fields);
     }
+
+    // ── Project doc: write approval/decline to project-level history ──
+    final projectRef = FirebaseFirestore.instance
+        .collection('tasks')
+        .doc(widget.projectId);
+    batch.update(projectRef, {
+      'quoteHistory': FieldValue.arrayUnion([projectHistoryEntry]),
+    });
+
     await batch.commit();
   }
 
@@ -624,9 +644,8 @@ class _CardButton extends StatelessWidget {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
-// _AmountRow — label + amount display
+// _AmountRow
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _AmountRow extends StatelessWidget {

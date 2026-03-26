@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // QuoteHistoryEntry — a single historical quote submission
 // ─────────────────────────────────────────────────────────────────────────────
@@ -11,8 +10,9 @@ class QuoteHistoryEntry {
   final double labour;
   final double total;
   final DateTime submittedAt;
-  final String actorName; // builder name or homeowner name
-  final String? note; // updateReason or declineReason
+  final String actorName;  // builder name or homeowner name
+  final String? note;      // updateReason or declineReason
+  final String? sentToName; // homeowner name — only on project-level entries
 
   const QuoteHistoryEntry({
     required this.type,
@@ -22,6 +22,7 @@ class QuoteHistoryEntry {
     required this.submittedAt,
     required this.actorName,
     this.note,
+    this.sentToName,
   });
 
   factory QuoteHistoryEntry.fromMap(Map<String, dynamic> m) =>
@@ -33,6 +34,7 @@ class QuoteHistoryEntry {
         submittedAt: _parse(m['submittedAt']),
         actorName: m['actorName'] ?? m['builderName'] ?? '',
         note: m['note'] ?? m['updateReason'],
+        sentToName: m['sentToName'], // ← new
       );
 
   static DateTime _parse(dynamic v) {

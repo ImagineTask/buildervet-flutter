@@ -2,18 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SendQuotePage
-//
-// Builder selects a homeowner from their contacts network.
-// On confirm → adds the homeowner's uid to participantIds on all tasks
-// under the project, so the homeowner can see and action the quote.
-// ─────────────────────────────────────────────────────────────────────────────
+class HomeownerSelection {
+  final String uid;
+  final String name;
+  const HomeownerSelection({required this.uid, required this.name});
+}
 
 class SendQuotePage extends StatefulWidget {
   final String projectId;
+  final bool selectionMode; // true = just pick homeowner, false = submit directly
 
-  const SendQuotePage({super.key, required this.projectId});
+  const SendQuotePage({
+    super.key,
+    required this.projectId,
+    this.selectionMode = false,
+  });
 
   @override
   State<SendQuotePage> createState() => _SendQuotePageState();
@@ -32,8 +35,6 @@ class _SendQuotePageState extends State<SendQuotePage> {
     super.dispose();
   }
 
-  // ── Fetch current user's contacts who are homeowners ──────────────────────
-
   Future<List<_ContactModel>> _fetchHomeowners() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return [];
@@ -48,10 +49,7 @@ class _SendQuotePageState extends State<SendQuotePage> {
     if (contacts.isEmpty) return [];
 
     final futures = contacts.map((contactUid) =>
-        FirebaseFirestore.instance
-            .collection('users')
-            .doc(contactUid)
-            .get());
+        FirebaseFirestore.instance.collection('users').doc(contactUid).get());
     final docs = await Future.wait(futures);
 
     return docs
@@ -61,41 +59,25 @@ class _SendQuotePageState extends State<SendQuotePage> {
         .toList();
   }
 
-  // ── Send quote to selected homeowner ─────────────────────────────────────
-
+  // Used when selectionMode = false (standalone send)
   Future<void> _send() async {
     if (_selectedUid == null) return;
     setState(() => _sending = true);
 
     try {
-      print('🔍 projectId: ${widget.projectId}');
-      print('🔍 selectedUid: $_selectedUid');
-
-      // Get all tasks under this project
       final tasksSnap = await FirebaseFirestore.instance
           .collection('tasks')
           .where('parentTaskId', isEqualTo: widget.projectId)
           .where('taskType', isEqualTo: 'task')
           .get(const GetOptions(source: Source.server));
 
-      print('🔍 child tasks found: ${tasksSnap.docs.length}');
-
-      // Also update the project task itself — force server fetch
       final projectSnap = await FirebaseFirestore.instance
           .collection('tasks')
           .doc(widget.projectId)
           .get(const GetOptions(source: Source.server));
 
-      print('🔍 projectSnap.exists: ${projectSnap.exists}');
-      print('🔍 projectSnap.id: ${projectSnap.id}');
-      if (projectSnap.exists) {
-        print('🔍 projectSnap taskType: ${projectSnap.data()?['taskType']}');
-        print('🔍 projectSnap participantIds: ${projectSnap.data()?['participantIds']}');
-      }
-
       final batch = FirebaseFirestore.instance.batch();
 
-      // Add homeowner to all child tasks
       for (final doc in tasksSnap.docs) {
         final current =
             List<String>.from(doc.data()['participantIds'] ?? []);
@@ -105,25 +87,20 @@ class _SendQuotePageState extends State<SendQuotePage> {
         }
       }
 
-      // Add homeowner to the project task + always update quoteLastSentAt
       if (projectSnap.exists) {
         final current = List<String>.from(
             projectSnap.data()?['participantIds'] ?? []);
         if (!current.contains(_selectedUid)) {
           current.add(_selectedUid!);
         }
-        print('🔍 writing quoteLastSentAt and quoteLastSentTo to project doc...');
         batch.update(projectSnap.reference, {
           'participantIds': current,
           'quoteLastSentAt': FieldValue.serverTimestamp(),
           'quoteLastSentTo': _selectedUid,
         });
-      } else {
-        print('❌ projectSnap does NOT exist — skipping project update!');
       }
 
       await batch.commit();
-      print('✅ batch committed');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -135,7 +112,6 @@ class _SendQuotePageState extends State<SendQuotePage> {
         Navigator.pop(context);
       }
     } catch (e) {
-      print('❌ Error in _send: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -146,6 +122,20 @@ class _SendQuotePageState extends State<SendQuotePage> {
       }
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _onConfirm() {
+    if (_selectedUid == null || _selectedName == null) return;
+
+    if (widget.selectionMode) {
+      // Just return the selection to CreateQuotePage
+      Navigator.pop(
+        context,
+        HomeownerSelection(uid: _selectedUid!, name: _selectedName!),
+      );
+    } else {
+      _send();
     }
   }
 
@@ -202,14 +192,13 @@ class _SendQuotePageState extends State<SendQuotePage> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                 child: TextField(
                   controller: _searchController,
-                  onChanged: (v) =>
-                      setState(() => _searchQuery = v),
+                  onChanged: (v) => setState(() => _searchQuery = v),
                   decoration: InputDecoration(
                     hintText: 'Search by name...',
                     hintStyle:
                         TextStyle(color: Colors.grey[400], fontSize: 13),
-                    prefixIcon: Icon(Icons.search,
-                        color: Colors.grey[400], size: 20),
+                    prefixIcon:
+                        Icon(Icons.search, color: Colors.grey[400], size: 20),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? GestureDetector(
                             onTap: () {
@@ -239,8 +228,8 @@ class _SendQuotePageState extends State<SendQuotePage> {
                     ? Center(
                         child: Text(
                           'No homeowners found.',
-                          style: TextStyle(
-                              color: Colors.grey[500], fontSize: 13),
+                          style:
+                              TextStyle(color: Colors.grey[500], fontSize: 13),
                         ),
                       )
                     : ListView.separated(
@@ -250,8 +239,7 @@ class _SendQuotePageState extends State<SendQuotePage> {
                             const SizedBox(height: 10),
                         itemBuilder: (context, index) {
                           final contact = filtered[index];
-                          final isSelected =
-                              _selectedUid == contact.uid;
+                          final isSelected = _selectedUid == contact.uid;
                           return GestureDetector(
                             onTap: () => setState(() {
                               _selectedUid = contact.uid;
@@ -269,8 +257,8 @@ class _SendQuotePageState extends State<SendQuotePage> {
                                     : null,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black
-                                        .withValues(alpha: 0.04),
+                                    color:
+                                        Colors.black.withValues(alpha: 0.04),
                                     blurRadius: 6,
                                     offset: const Offset(0, 2),
                                   ),
@@ -278,7 +266,6 @@ class _SendQuotePageState extends State<SendQuotePage> {
                               ),
                               child: Row(
                                 children: [
-                                  // Avatar
                                   Container(
                                     width: 42,
                                     height: 42,
@@ -300,8 +287,7 @@ class _SendQuotePageState extends State<SendQuotePage> {
                                                 size: 22,
                                                 color: isSelected
                                                     ? Colors.white
-                                                    : const Color(
-                                                        0xFF43C59E),
+                                                    : const Color(0xFF43C59E),
                                               ),
                                             ),
                                           )
@@ -314,8 +300,6 @@ class _SendQuotePageState extends State<SendQuotePage> {
                                           ),
                                   ),
                                   const SizedBox(width: 12),
-
-                                  // Name + email
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -343,8 +327,6 @@ class _SendQuotePageState extends State<SendQuotePage> {
                                       ],
                                     ),
                                   ),
-
-                                  // Checkmark
                                   if (isSelected)
                                     const Icon(Icons.check_circle_rounded,
                                         color: Color(0xFF43C59E), size: 22),
@@ -356,20 +338,19 @@ class _SendQuotePageState extends State<SendQuotePage> {
                       ),
               ),
 
-              // Send button
+              // Confirm button
               if (_selectedUid != null)
                 Container(
                   color: Colors.white,
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
                   child: GestureDetector(
-                    onTap: _sending ? null : _send,
+                    onTap: _sending ? null : _onConfirm,
                     child: Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       decoration: BoxDecoration(
                         color: _sending
-                            ? const Color(0xFF43C59E)
-                                .withValues(alpha: 0.5)
+                            ? const Color(0xFF43C59E).withValues(alpha: 0.5)
                             : const Color(0xFF43C59E),
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -388,7 +369,9 @@ class _SendQuotePageState extends State<SendQuotePage> {
                                       color: Colors.white, size: 18),
                                   const SizedBox(width: 8),
                                   Text(
-                                    'Send to $_selectedName',
+                                    widget.selectionMode
+                                        ? 'Send to $_selectedName'
+                                        : 'Send to $_selectedName',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontWeight: FontWeight.bold,
