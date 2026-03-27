@@ -2,29 +2,34 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 class NotificationService {
   static final _fcm = FirebaseMessaging.instance;
   static final _local = FlutterLocalNotificationsPlugin();
 
   static Future<void> init() async {
-    await _fcm.requestPermission();
+    try {
+      await _fcm.requestPermission();
 
-    await _local.initialize(
-      settings: InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-        iOS: DarwinInitializationSettings(),
-      ),
-    );
+      await _local.initialize(
+        settings: const InitializationSettings(
+          android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          iOS: DarwinInitializationSettings(),
+        ),
+      );
 
-    final token = await _fcm.getToken();
-    if (token != null) await _saveToken(token);
-    _fcm.onTokenRefresh.listen(_saveToken);
+      final token = await _fcm.getToken();
+      if (token != null) await _saveToken(token);
+      _fcm.onTokenRefresh.listen(_saveToken);
 
-    FirebaseMessaging.onMessage.listen((msg) {
-      final n = msg.notification;
-      if (n != null) _showLocal(n.title ?? '', n.body ?? '');
-    });
+      FirebaseMessaging.onMessage.listen((msg) {
+        final n = msg.notification;
+        if (n != null) _showLocal(n.title ?? '', n.body ?? '');
+      });
+    } catch (e) {
+      debugPrint('Notification Service init skipped: $e');
+    }
   }
 
   static Future<void> _saveToken(String token) async {

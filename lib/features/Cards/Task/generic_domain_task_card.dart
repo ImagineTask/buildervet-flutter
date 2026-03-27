@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../home/models/task_model.dart';
+import '../../../core/domain_registry.dart';
 
-class TaskAssignedTypeCard extends StatelessWidget {
+class GenericDomainTaskCard extends StatelessWidget {
   final TaskModel task;
 
-  const TaskAssignedTypeCard({super.key, required this.task});
+  const GenericDomainTaskCard({super.key, required this.task});
 
   Color get _statusColor {
     switch (task.status) {
@@ -30,7 +31,7 @@ class TaskAssignedTypeCard extends StatelessWidget {
       case 'active':
         return 'Active';
       case 'negotiating':
-        return 'Negotiating';
+        return 'Discussing';
       case 'done':
         return 'Done';
       case 'denied':
@@ -40,14 +41,10 @@ class TaskAssignedTypeCard extends StatelessWidget {
     }
   }
 
-  int get _scheduledDays {
-    final dates = task.metadata['scheduledDates'];
-    if (dates == null) return 0;
-    return (dates as List).length;
-  }
-
   @override
   Widget build(BuildContext context) {
+    final domainConfig = DomainRegistry.current;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -117,17 +114,13 @@ class TaskAssignedTypeCard extends StatelessWidget {
               ),
             const SizedBox(height: 12),
 
-            // Info row
+            // Info row dynamic to domain
             Row(
               children: [
-                if (_scheduledDays > 0) ...[
-                  _infoChip(Icons.calendar_today_outlined,
-                      '$_scheduledDays day${_scheduledDays > 1 ? 's' : ''}'),
-                  const SizedBox(width: 8),
-                ],
                 if (task.contractorType != null) ...[
                   _infoChip(
-                      Icons.work_outline, task.contractorType!),
+                      domainConfig.executorIcon, 
+                      '${domainConfig.executorLabel}: ${task.contractorType!}'),
                   const SizedBox(width: 8),
                 ],
                 const Spacer(),
@@ -145,6 +138,21 @@ class TaskAssignedTypeCard extends StatelessWidget {
                   ),
               ],
             ),
+            
+            // Recurrence Indicator
+            if (task.isRecurring) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.loop, size: 14, color: Colors.blue[300]),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Recurring: ${task.recurrenceRule ?? 'daily'}',
+                    style: TextStyle(fontSize: 11, color: Colors.blue[300], fontWeight: FontWeight.w500),
+                  )
+                ],
+              )
+            ]
           ],
         ),
       ),

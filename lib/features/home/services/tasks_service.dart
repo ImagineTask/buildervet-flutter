@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/task_model.dart';
@@ -108,6 +109,60 @@ class TasksService {
 
   /// Update a task's status field.
   Future<void> updateStatus(String docId, String newStatus) async {
+    if (newStatus == 'done') {
+      try {
+        final snap = await _db.collection('tasks').doc(docId).get();
+        if (snap.exists) {
+          final task = TaskModel.fromFirestore(snap);
+          if (task.isRecurring) {
+            // Generate next occurrence
+            DateTime nextStart;
+            DateTime nextEnd;
+            if (task.recurrenceRule == 'weekly') {
+              nextStart = task.startTime.add(const Duration(days: 7));
+              nextEnd = task.endTime.add(const Duration(days: 7));
+            } else if (task.recurrenceRule == 'monthly') {
+              nextStart = DateTime(task.startTime.year, task.startTime.month + 1, task.startTime.day, task.startTime.hour, task.startTime.minute);
+              nextEnd = DateTime(task.endTime.year, task.endTime.month + 1, task.endTime.day, task.endTime.hour, task.endTime.minute);
+            } else {
+              // Default to daily
+              nextStart = task.startTime.add(const Duration(days: 1));
+              nextEnd = task.endTime.add(const Duration(days: 1));
+            }
+
+            final newRef = _db.collection('tasks').doc();
+            final newTaskMap = {
+              'taskId': newRef.id,
+              'taskName': task.taskName,
+              'description': task.description,
+              'taskType': task.taskType,
+              'status': 'active', // Reset status for the new recurrence
+              'parentTaskId': task.parentTaskId,
+              'contractorType': task.contractorType,
+              'startTime': Timestamp.fromDate(nextStart),
+              'endTime': Timestamp.fromDate(nextEnd),
+              'durationDays': task.durationDays,
+              'guidePrice': task.guidePrice,
+              'guidePriceMin': task.guidePriceMin,
+              'guidePriceMax': task.guidePriceMax,
+              'actionSpace': task.actionSpace,
+              'participantIds': task.participantIds,
+              'assignedBuilderIds': task.assignedBuilderIds,
+              'ownerId': task.ownerId,
+              'createdAt': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+              'metadata': task.metadata,
+            };
+            
+            await newRef.set(newTaskMap);
+          }
+        }
+      } catch (e) {
+        // Silently fail recurrence rather than blocking the status update
+        debugPrint('Error generating recurring task: $e');
+      }
+    }
+
     await _db.collection('tasks').doc(docId).update({'status': newStatus});
   }
 

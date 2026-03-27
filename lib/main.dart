@@ -3,14 +3,14 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
-import 'features/Home/home_screen.dart';
+import 'features/home/home_screen.dart';
 import 'features/Network/network_screen.dart';
 import 'features/Calendar/calendar_screen.dart';
 import 'features/Chat/chat_screen.dart';
 import 'features/Alert/alert_screen.dart';
 import 'features/auth/auth_screen.dart';
-import 'features/Home/state/project_selection_state.dart';
-import 'features/Home/services/notification_service.dart';
+import 'features/home/state/project_selection_state.dart';
+import 'features/home/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

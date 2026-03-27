@@ -92,7 +92,7 @@ class ProfileScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Account
-                    _SectionLabel(label: 'Account'),
+                    const _SectionLabel(label: 'Account'),
                     const SizedBox(height: 10),
                     _MenuCard(
                       items: [
@@ -122,7 +122,7 @@ class ProfileScreen extends StatelessWidget {
                     const SizedBox(height: 24),
 
                     // App
-                    _SectionLabel(label: 'App'),
+                    const _SectionLabel(label: 'App'),
                     const SizedBox(height: 10),
                     _MenuCard(
                       items: [
@@ -152,7 +152,7 @@ class ProfileScreen extends StatelessWidget {
                     const SizedBox(height: 24),
 
                     // Sign out
-                    _SectionLabel(label: 'Session'),
+                    const _SectionLabel(label: 'Session'),
                     const SizedBox(height: 10),
                     _MenuCard(
                       items: [

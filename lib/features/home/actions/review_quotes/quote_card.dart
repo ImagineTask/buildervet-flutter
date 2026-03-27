@@ -232,12 +232,12 @@ class _QuoteCardState extends State<QuoteCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      const Row(
                         children: [
-                          const Icon(Icons.info_outline,
+                          Icon(Icons.info_outline,
                               size: 15, color: Color(0xFFFFB347)),
-                          const SizedBox(width: 8),
-                          const Expanded(
+                          SizedBox(width: 8),
+                          Expanded(
                             child: Text(
                               'A new quote has been submitted. Please review and make a decision.',
                               style: TextStyle(

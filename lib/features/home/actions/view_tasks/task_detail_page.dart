@@ -149,10 +149,12 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       };
       final duration = int.tryParse(_durationController.text);
       if (duration != null) updates['metadata.durationDays'] = duration;
-      if (_editStartDate != null)
+      if (_editStartDate != null) {
         updates['metadata.startTime'] = _editStartDate!.toUtc().toIso8601String();
-      if (_editEndDate != null)
+      }
+      if (_editEndDate != null) {
         updates['metadata.endTime'] = _editEndDate!.toUtc().toIso8601String();
+      }
 
       await FirebaseFirestore.instance
           .collection('tasks')
@@ -902,18 +904,18 @@ class _TaskDetailPageState extends State<TaskDetailPage>
 
   Widget _buildActionSpaceSection() {
     final actionMeta = <String, _ActionMeta>{
-      'accept_task': _ActionMeta(
+      'accept_task': const _ActionMeta(
           label: 'Accept Task',
           icon: Icons.check_circle_outline_rounded,
-          color: const Color(0xFF43C59E)),
-      'deny_task': _ActionMeta(
+          color: Color(0xFF43C59E)),
+      'deny_task': const _ActionMeta(
           label: 'Deny Task',
           icon: Icons.cancel_outlined,
-          color: const Color(0xFFFF6B6B)),
-      'negotiate_task': _ActionMeta(
+          color: Color(0xFFFF6B6B)),
+      'negotiate_task': const _ActionMeta(
           label: 'Negotiate',
           icon: Icons.handshake_outlined,
-          color: const Color(0xFF4ECDC4)),
+          color: Color(0xFF4ECDC4)),
     };
 
     return _SectionCard(

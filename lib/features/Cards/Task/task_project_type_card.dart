@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../Home/models/task_model.dart';
-import '../../Home/services/tasks_service.dart';
+import '../../home/models/task_model.dart';
+import '../../home/services/tasks_service.dart';
 
 // ─────────────────────────────────────────────
 // Project Card (taskType == "project")

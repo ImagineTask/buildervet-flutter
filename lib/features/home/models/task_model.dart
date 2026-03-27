@@ -43,6 +43,12 @@ class TaskModel {
   bool get hasQuote => quoteBuilderId != null;
   bool get hasAgreedPrice => agreedTotal != null;
 
+  // ── Generic & Recurrence Helpers ─────────────────────────────────────
+  bool get isRecurring => metadata['isRecurring'] == true;
+  String? get recurrenceRule => metadata['recurrenceRule'];
+  String? get moduleType => metadata['moduleType'];
+  String? get domainId => metadata['domainId'];
+
   TaskModel({
     required this.id,
     required this.taskId,

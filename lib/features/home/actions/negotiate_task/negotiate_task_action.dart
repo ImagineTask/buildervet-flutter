@@ -304,7 +304,7 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                           ),
                         ),
                       );
-                    })).toList(),
+                    })),
 
                     // Other reason text field
                     if (_selectedReason == 'Other') ...[

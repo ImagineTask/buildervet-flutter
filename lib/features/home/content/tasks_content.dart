@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../../Home/models/task_model.dart';
-import '../../Home/actions/action_registry.dart';
-import '../../Cards/Task/task_assigned_type_card.dart';
+import '../../home/models/task_model.dart';
+import '../../home/actions/action_registry.dart';
+import 'task_ui_resolver.dart';
 
 class TasksContent extends StatefulWidget {
   const TasksContent({super.key});
@@ -141,7 +141,7 @@ class _TasksContentState extends State<TasksContent> {
                 // Selected task card
                 GestureDetector(
                   onTap: _onSelectedCardTapped,
-                  child: TaskAssignedTypeCard(task: selectedTask),
+                  child: TaskUIResolver.getCard(selectedTask),
                 ),
                 const SizedBox(height: 20),
 
@@ -236,7 +236,7 @@ class _TasksContentState extends State<TasksContent> {
               const SizedBox(height: 10),
               ...pending.map((t) => GestureDetector(
                     onTap: () => _onCardTapped(t),
-                    child: TaskAssignedTypeCard(task: t),
+                    child: TaskUIResolver.getCard(t),
                   )),
             ],
             if (negotiating.isNotEmpty) ...[
@@ -246,7 +246,7 @@ class _TasksContentState extends State<TasksContent> {
               const SizedBox(height: 10),
               ...negotiating.map((t) => GestureDetector(
                     onTap: () => _onCardTapped(t),
-                    child: TaskAssignedTypeCard(task: t),
+                    child: TaskUIResolver.getCard(t),
                   )),
             ],
             if (active.isNotEmpty) ...[
@@ -256,7 +256,7 @@ class _TasksContentState extends State<TasksContent> {
               const SizedBox(height: 10),
               ...active.map((t) => GestureDetector(
                     onTap: () => _onCardTapped(t),
-                    child: TaskAssignedTypeCard(task: t),
+                    child: TaskUIResolver.getCard(t),
                   )),
             ],
             if (done.isNotEmpty) ...[
@@ -265,7 +265,7 @@ class _TasksContentState extends State<TasksContent> {
               const SizedBox(height: 10),
               ...done.map((t) => GestureDetector(
                     onTap: () => _onCardTapped(t),
-                    child: TaskAssignedTypeCard(task: t),
+                    child: TaskUIResolver.getCard(t),
                   )),
             ],
             if (denied.isNotEmpty) ...[
@@ -274,7 +274,7 @@ class _TasksContentState extends State<TasksContent> {
               const SizedBox(height: 10),
               ...denied.map((t) => GestureDetector(
                     onTap: () => _onCardTapped(t),
-                    child: TaskAssignedTypeCard(task: t),
+                    child: TaskUIResolver.getCard(t),
                   )),
             ],
           ],

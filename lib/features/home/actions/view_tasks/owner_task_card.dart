@@ -483,8 +483,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                         task.quoteTotal != task.agreedTotal) ...[
                       Row(
                         children: [
-                          Icon(Icons.fiber_new_rounded,
-                              size: 14, color: const Color(0xFFFF6B6B)),
+                          const Icon(Icons.fiber_new_rounded,
+                              size: 14, color: Color(0xFFFF6B6B)),
                           const SizedBox(width: 4),
                           Text(
                             'New Quote: £${(task.quoteTotal ?? 0).toStringAsFixed(0)}',
@@ -502,8 +502,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     ] else ...[
                       Row(
                         children: [
-                          Icon(Icons.check_circle_outline,
-                              size: 13, color: const Color(0xFF43C59E)),
+                          const Icon(Icons.check_circle_outline,
+                              size: 13, color: Color(0xFF43C59E)),
                           const SizedBox(width: 6),
                           Text(
                             'Agreed: £${(task.agreedTotal ?? 0).toStringAsFixed(0)}',
@@ -869,7 +869,6 @@ class _QuoteStatusBadge extends StatelessWidget {
 class _QuoteStatusRow extends StatelessWidget {
   final String status;
   final String? declineReason;
-
   const _QuoteStatusRow({required this.status, this.declineReason});
 
   Color get _color {

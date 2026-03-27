@@ -1,5 +1,6 @@
 import '../models/task_model.dart';
 import 'base_action_tile.dart';
+import 'generic_action_tile.dart';
 import 'view_tasks/view_tasks_action.dart';
 import 'review_quotes/review_quotes_action.dart';
 import 'schedule_work/schedule_work_action.dart';
@@ -52,7 +53,8 @@ class ActionRegistry {
       case 'customised':
         return CustomisedAction(project: project);
       default:
-        return null;
+        // Generic fallback for any unrecognized action strings (e.g. 'clock_in', 'deliver_supply')
+        return GenericAction(project: project, actionName: action);
     }
   }
 

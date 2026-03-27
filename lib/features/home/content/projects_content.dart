@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models/task_model.dart';
-import '../services/tasks_service.dart';
+import '../../home/models/task_model.dart';
+import '../../home/services/tasks_service.dart';
 import '../../Cards/Task/task_project_type_card.dart';
 import '../actions/action_registry.dart';
 import '../actions/marketing/marketing_action.dart';

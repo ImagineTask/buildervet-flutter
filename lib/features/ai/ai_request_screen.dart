@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import '../../core/domain_registry.dart';
 
 // ── Cloud Run base URL ────────────────────────────────────────────────────────
-const _apiBaseUrl =
-    'https://imaginetask-engine-v1-268920641222.europe-west2.run.app';
+const _apiBaseUrl ="http://127.0.0.1:8080";
+    // 'https://imaginetask-engine-v1-268920641222.europe-west2.run.app';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -47,9 +48,9 @@ class _AiRequestScreenState extends State<AiRequestScreen> {
       final body = <String, dynamic>{
         'userId': user?.uid ?? 'anonymous',
         'userName': user?.displayName ?? 'User',
-        'userRole': 'homeowner',
+        'userRole': DomainRegistry.current.requesterLabel.toLowerCase(),
         'context': contextText,
-        'template': 'renovation',
+        'template': DomainRegistry.current.domainId,
         'provider': 'google',
       };
 
@@ -209,28 +210,12 @@ class _AiRequestScreenState extends State<AiRequestScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [
-                _SuggestionChip(
-                  label: '🍳 Kitchen renovation',
-                  onTap: () => _controller.text =
-                      'I need a full kitchen renovation including new cabinets, plumbing, and electrical',
-                ),
-                _SuggestionChip(
-                  label: '🚿 Bathroom refresh',
-                  onTap: () => _controller.text =
-                      'I need a bathroom renovation with new shower, tiling, and plumbing',
-                ),
-                _SuggestionChip(
-                  label: '🏠 Loft conversion',
-                  onTap: () => _controller.text =
-                      'I want to convert my loft into a bedroom with en-suite bathroom',
-                ),
-                _SuggestionChip(
-                  label: '🧱 Extension',
-                  onTap: () => _controller.text =
-                      'I need a single storey rear extension for a larger kitchen-diner',
-                ),
-              ],
+              children: DomainRegistry.current.aiSuggestions.map((s) {
+                return _SuggestionChip(
+                  label: s['label']!,
+                  onTap: () => _controller.text = s['prompt']!,
+                );
+              }).toList(),
             ),
             const SizedBox(height: 24),
 

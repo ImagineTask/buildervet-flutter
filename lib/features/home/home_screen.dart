@@ -4,6 +4,7 @@ import 'content/tasks_content.dart';
 import '../AI/ai_request_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'profile/profile_screen.dart';
+import '../../core/domain_registry.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -130,14 +131,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: TextField(
                       controller: _searchController,
                       decoration: InputDecoration(
-                        hintText: 'Describe a new project with AI...',
+                        hintText: DomainRegistry.current.searchHint,
                         hintStyle: TextStyle(
                           color: Colors.grey[400],
                           fontSize: 14,
                         ),
-                        prefixIcon: Icon(
+                        prefixIcon: const Icon(
                           Icons.auto_awesome_rounded,
-                          color: const Color(0xFF6C63FF),
+                          color: Color(0xFF6C63FF),
                           size: 20,
                         ),
                         suffixIcon: Container(

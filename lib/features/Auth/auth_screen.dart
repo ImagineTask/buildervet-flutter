@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/domain_registry.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -15,7 +16,7 @@ class _AuthScreenState extends State<AuthScreen>
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
-  String _selectedRole = 'Homeowner'; // 'Homeowner' or 'Builder'
+  late String _selectedRole;
 
   late TabController _tabController;
 
@@ -34,6 +35,7 @@ class _AuthScreenState extends State<AuthScreen>
   @override
   void initState() {
     super.initState();
+    _selectedRole = DomainRegistry.current.requesterLabel;
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
@@ -295,20 +297,20 @@ class _AuthScreenState extends State<AuthScreen>
                                   Row(
                                     children: [
                                       _RoleChip(
-                                        label: 'Homeowner',
-                                        icon: Icons.home_outlined,
+                                        label: DomainRegistry.current.requesterLabel,
+                                        icon: DomainRegistry.current.requesterIcon,
                                         selected:
-                                            _selectedRole == 'Homeowner',
+                                            _selectedRole == DomainRegistry.current.requesterLabel,
                                         onTap: () => setState(
-                                            () => _selectedRole = 'Homeowner'),
+                                            () => _selectedRole = DomainRegistry.current.requesterLabel),
                                       ),
                                       const SizedBox(width: 12),
                                       _RoleChip(
-                                        label: 'Builder',
-                                        icon: Icons.construction_outlined,
-                                        selected: _selectedRole == 'Builder',
+                                        label: DomainRegistry.current.executorLabel,
+                                        icon: DomainRegistry.current.executorIcon,
+                                        selected: _selectedRole == DomainRegistry.current.executorLabel,
                                         onTap: () => setState(
-                                            () => _selectedRole = 'Builder'),
+                                            () => _selectedRole = DomainRegistry.current.executorLabel),
                                       ),
                                     ],
                                   ),
@@ -365,10 +367,12 @@ class _AuthScreenState extends State<AuthScreen>
                         icon: Icons.email_outlined,
                         keyboardType: TextInputType.emailAddress,
                         validator: (v) {
-                          if (v == null || v.trim().isEmpty)
+                          if (v == null || v.trim().isEmpty) {
                             return 'Please enter your email';
-                          if (!v.contains('@'))
+                          }
+                          if (!v.contains('@')) {
                             return 'Enter a valid email address';
+                          }
                           return null;
                         },
                       ),
@@ -393,10 +397,12 @@ class _AuthScreenState extends State<AuthScreen>
                               () => _obscurePassword = !_obscurePassword),
                         ),
                         validator: (v) {
-                          if (v == null || v.isEmpty)
+                          if (v == null || v.isEmpty) {
                             return 'Please enter your password';
-                          if (!_isLogin && v.length < 6)
+                          }
+                          if (!_isLogin && v.length < 6) {
                             return 'Minimum 6 characters';
+                          }
                           return null;
                         },
                       ),

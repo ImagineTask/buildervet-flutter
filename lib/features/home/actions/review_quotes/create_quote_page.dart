@@ -84,8 +84,12 @@ class _CreateQuotePageState extends State<CreateQuotePage> {
 
   @override
   void dispose() {
-    for (final c in _materialControllers.values) c.dispose();
-    for (final c in _labourControllers.values) c.dispose();
+    for (final c in _materialControllers.values) {
+      c.dispose();
+    }
+    for (final c in _labourControllers.values) {
+      c.dispose();
+    }
     _reasonController.dispose();
     super.dispose();
   }
