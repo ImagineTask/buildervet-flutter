@@ -8,15 +8,15 @@ class ReviseTaskAction extends BaseActionTile {
 
   @override
   bool get isDisabled =>
-      project.status == 'done' ||
-      project.status == 'denied' ||
-      project.status == 'unassigned';
+      project.isDone ||
+      project.isDenied ||
+      project.isUnassigned;
 
   @override
   String get disabledReason {
-    if (project.status == 'done') return 'Task is completed';
-    if (project.status == 'denied') return 'Task has been denied';
-    if (project.status == 'unassigned') return 'Task has not been assigned yet';
+    if (project.isDone) return 'Task is completed';
+    if (project.isDenied) return 'Task has been denied';
+    if (project.isUnassigned) return 'Task has not been assigned yet';
     return '';
   }
 
@@ -60,6 +60,15 @@ class _ReviseSheetState extends State<_ReviseSheet> {
   String? _selectedReason;
   bool _isSaving = false;
 
+  // Revision type
+  bool _reviseFee = true;
+  bool _reviseDeadline = false;
+
+  // Deadline
+  Set<DateTime> _selectedDates = {};
+  List<DateTimeRange> _occupiedRanges = [];
+  bool _isLoadingOccupied = false;
+
   final List<String> _reasonOptions = [
     'Scope is larger than expected',
     'Materials cost has increased',
@@ -76,6 +85,13 @@ class _ReviseSheetState extends State<_ReviseSheet> {
     if (widget.task.guidePrice > 0) {
       _requestedFeeController.text = widget.task.guidePrice.toStringAsFixed(0);
     }
+    // Pre-fill existing scheduled dates
+    final savedDates = List<dynamic>.from(widget.task.metadata['scheduledDates'] ?? []);
+    _selectedDates = savedDates
+        .map((d) => DateTime.tryParse(d.toString()))
+        .whereType<DateTime>()
+        .map((d) => DateTime(d.year, d.month, d.day))
+        .toSet();
   }
 
   @override
@@ -85,13 +101,95 @@ class _ReviseSheetState extends State<_ReviseSheet> {
     super.dispose();
   }
 
+  Future<void> _loadOccupiedRanges() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    setState(() => _isLoadingOccupied = true);
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('tasks')
+          .where('assignedBuilderIds', arrayContains: currentUser.uid)
+          .where('taskType', isEqualTo: 'task')
+          .get();
+
+      final ranges = <DateTimeRange>[];
+      for (final doc in snap.docs) {
+        // Skip current task
+        if (doc.id == widget.task.id) continue;
+
+        final d = doc.data();
+        final metadata = Map<String, dynamic>.from(d['metadata'] ?? {});
+        final savedDates = List<dynamic>.from(metadata['scheduledDates'] ?? []);
+
+        for (final dateStr in savedDates) {
+          final date = DateTime.tryParse(dateStr.toString());
+          if (date != null) {
+            final normalized = DateTime(date.year, date.month, date.day);
+            ranges.add(DateTimeRange(
+              start: normalized,
+              end: normalized.add(const Duration(hours: 23)),
+            ));
+          }
+        }
+      }
+
+      setState(() {
+        _occupiedRanges = ranges;
+        _isLoadingOccupied = false;
+      });
+    } catch (e) {
+      setState(() => _isLoadingOccupied = false);
+    }
+  }
+
+  bool _isOccupied(DateTime date) {
+    final normalized = DateTime(date.year, date.month, date.day);
+    for (final r in _occupiedRanges) {
+      final rStart = DateTime(r.start.year, r.start.month, r.start.day);
+      final rEnd = DateTime(r.end.year, r.end.month, r.end.day);
+      if (!normalized.isBefore(rStart) && !normalized.isAfter(rEnd)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  DateTime? get _startDate => _selectedDates.isEmpty
+      ? null
+      : _selectedDates.reduce((a, b) => a.isBefore(b) ? a : b);
+
+  DateTime? get _endDate => _selectedDates.isEmpty
+      ? null
+      : _selectedDates.reduce((a, b) => a.isAfter(b) ? a : b);
+
+  void _toggleDate(DateTime date) {
+    final normalized = DateTime(date.year, date.month, date.day);
+    setState(() {
+      if (_selectedDates.contains(normalized)) {
+        _selectedDates.remove(normalized);
+      } else {
+        _selectedDates.add(normalized);
+      }
+    });
+  }
+
   Future<void> _submit() async {
+    if (!_reviseFee && !_reviseDeadline) {
+      _showSnack('Please select at least one revision type');
+      return;
+    }
     if (_selectedReason == null) {
       _showSnack('Please select a reason');
       return;
     }
-    if (_requestedFeeController.text.trim().isEmpty) {
+    if (_reviseFee && _requestedFeeController.text.trim().isEmpty) {
       _showSnack('Please enter your requested fee');
+      return;
+    }
+    if (_reviseDeadline && _selectedDates.isEmpty) {
+      _showSnack('Please select at least one working date');
       return;
     }
     if (_selectedReason == 'Other' && _reasonController.text.trim().isEmpty) {
@@ -114,20 +212,48 @@ class _ReviseSheetState extends State<_ReviseSheet> {
 
       final batch = firestore.batch();
 
-      // 1. Update task
-      batch.update(taskRef, {
+      // Build update map
+      final Map<String, dynamic> updates = {
         'status': 'revising',
         'updatedAt': now,
         'actionSpace': ['accept_task', 'deny_task', 'revise_task'],
         'metadata.revision': {
-          'requestedFee': requestedFee,
-          'currentFee': widget.task.guidePrice,
           'reason': reason,
           'submittedAt': now,
+          'reviseFee': _reviseFee,
+          'reviseDeadline': _reviseDeadline,
+          if (_reviseFee) ...{
+            'requestedFee': requestedFee,
+            'currentFee': widget.task.guidePrice,
+          },
+          if (_reviseDeadline) ...{
+            'requestedDates': _selectedDates
+                .map((d) => d.toIso8601String())
+                .toList(),
+            'currentStartTime': widget.task.startTime.toIso8601String(),
+            'currentEndTime': widget.task.endTime.toIso8601String(),
+          },
         },
-      });
+      };
 
-      // 2. Write event to subcollection
+      // If revising deadline, update task dates
+      if (_reviseDeadline && _selectedDates.isNotEmpty) {
+        final sortedDates = _selectedDates.toList()..sort();
+        updates['metadata.scheduledDates'] =
+            sortedDates.map((d) => d.toIso8601String()).toList();
+        updates['startTime'] = Timestamp.fromDate(sortedDates.first);
+        updates['endTime'] = Timestamp.fromDate(sortedDates.last);
+        updates['durationDays'] = _selectedDates.length;
+      }
+
+      // If revising fee, update guidePrice
+      if (_reviseFee) {
+        updates['guidePrice'] = requestedFee;
+      }
+
+      batch.update(taskRef, updates);
+
+      // Write event to subcollection
       final eventRef = taskRef.collection('events').doc(eventId);
       batch.set(eventRef, {
         'id': eventId,
@@ -135,13 +261,22 @@ class _ReviseSheetState extends State<_ReviseSheet> {
         'timestamp': now,
         'actorId': currentUser?.uid ?? widget.task.ownerId,
         'actorName': currentUser?.displayName ?? 'Unknown',
-        'actorRole': 'builder', // builder is requesting the revision
+        'actorRole': 'builder',
         'data': {
           'previousStatus': widget.task.status,
           'newStatus': 'revising',
-          'requestedFee': requestedFee,
-          'currentFee': widget.task.guidePrice,
           'reason': reason,
+          'reviseFee': _reviseFee,
+          'reviseDeadline': _reviseDeadline,
+          if (_reviseFee) ...{
+            'requestedFee': requestedFee,
+            'currentFee': widget.task.guidePrice,
+          },
+          if (_reviseDeadline) ...{
+            'requestedDates': _selectedDates
+                .map((d) => d.toIso8601String())
+                .toList(),
+          },
         },
       });
 
@@ -250,38 +385,185 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Current fee vs guide price range
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5F5F5),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: _feeInfoItem(
-                              label: 'Current Fee',
-                              value: '£${widget.task.guidePrice.toStringAsFixed(0)}',
-                              color: const Color(0xFF1A1A2E),
-                            ),
+
+                    // ── What to revise ──────────────────────────────
+                    _label('What would you like to revise?'),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _reviseToggle(
+                            icon: Icons.currency_pound,
+                            label: 'Fee',
+                            selected: _reviseFee,
+                            onTap: () => setState(() => _reviseFee = !_reviseFee),
                           ),
-                          Container(width: 1, height: 40, color: Colors.grey[300]),
-                          Expanded(
-                            child: _feeInfoItem(
-                              label: 'Guide Range',
-                              value:
-                                  '£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)}',
-                              color: Colors.grey,
-                            ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _reviseToggle(
+                            icon: Icons.calendar_today_outlined,
+                            label: 'Deadline',
+                            selected: _reviseDeadline,
+                            onTap: () async {
+                              setState(() => _reviseDeadline = !_reviseDeadline);
+                              if (_reviseDeadline && _occupiedRanges.isEmpty) {
+                                await _loadOccupiedRanges();
+                              }
+                            },
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 24),
 
-                    // Reason selector
+                    // ── Fee section ─────────────────────────────────
+                    if (_reviseFee) ...[
+                      _label('Requested Fee'),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _feeInfoItem(
+                                label: 'Current Fee',
+                                value: '£${widget.task.guidePrice.toStringAsFixed(0)}',
+                                color: const Color(0xFF1A1A2E),
+                              ),
+                            ),
+                            Container(width: 1, height: 36, color: Colors.grey[300]),
+                            Expanded(
+                              child: _feeInfoItem(
+                                label: 'Guide Range',
+                                value:
+                                    '£${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)}',
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextField(
+                        controller: _requestedFeeController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          hintText: 'Enter requested fee',
+                          prefixIcon: const Icon(Icons.currency_pound, color: Color(0xFF4ECDC4)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFF4ECDC4), width: 2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+
+                    // ── Deadline section ────────────────────────────
+                    if (_reviseDeadline) ...[
+                      _label('Requested Working Dates'),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tap dates to select your preferred working days',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      ),
+                      const SizedBox(height: 12),
+                      // Current dates info
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today_outlined,
+                                size: 14, color: Colors.grey),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Current: ${_formatDate(widget.task.startTime)} – ${_formatDate(widget.task.endTime)}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Legend
+                      Row(
+                        children: [
+                          _legendItem(const Color(0xFF4ECDC4), 'Selected'),
+                          const SizedBox(width: 16),
+                          _legendItem(Colors.grey.shade400, 'Occupied'),
+                          const SizedBox(width: 16),
+                          _legendItem(Colors.grey.shade200, 'Unavailable'),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (_isLoadingOccupied)
+                        const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(20),
+                            child: CircularProgressIndicator(color: Color(0xFF4ECDC4)),
+                          ),
+                        )
+                      else
+                        _ReviseCalendar(
+                          selectedDates: _selectedDates,
+                          isOccupied: _isOccupied,
+                          onDayTap: _toggleDate,
+                        ),
+                      if (_selectedDates.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4ECDC4).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '${_selectedDates.length} working day${_selectedDates.length > 1 ? 's' : ''} selected',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Color(0xFF4ECDC4),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _selectedDates.clear()),
+                                    child: const Text('Clear',
+                                        style: TextStyle(fontSize: 12, color: Colors.red)),
+                                  ),
+                                ],
+                              ),
+                              if (_startDate != null && _endDate != null) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'From ${_formatDate(_startDate!)} to ${_formatDate(_endDate!)}',
+                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                    ],
+
+                    // ── Reason selector ─────────────────────────────
                     _label('Reason for Revision'),
                     const SizedBox(height: 10),
                     ...(_reasonOptions.map((reason) {
@@ -345,29 +627,6 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 24),
-
-                    // Requested fee
-                    _label('Requested Fee'),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Enter the fee you would accept for this task',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _requestedFeeController,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        hintText: 'Enter amount',
-                        prefixIcon: const Icon(Icons.currency_pound, color: Color(0xFF4ECDC4)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFF4ECDC4), width: 2),
-                        ),
-                      ),
-                    ),
                     const SizedBox(height: 32),
 
                     // Submit button
@@ -403,6 +662,58 @@ class _ReviseSheetState extends State<_ReviseSheet> {
     );
   }
 
+  Widget _reviseToggle({
+    required IconData icon,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF4ECDC4).withOpacity(0.08) : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: selected ? const Color(0xFF4ECDC4) : Colors.grey.shade200,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon,
+                color: selected ? const Color(0xFF4ECDC4) : Colors.grey[400],
+                size: 22),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                color: selected ? const Color(0xFF4ECDC4) : Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendItem(Color color, String label) {
+    return Row(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+      ],
+    );
+  }
+
   Widget _label(String text) => Text(
         text,
         style: const TextStyle(
@@ -424,6 +735,152 @@ class _ReviseSheetState extends State<_ReviseSheet> {
         Text(
           value,
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime date) => '${date.day}/${date.month}/${date.year}';
+}
+
+// ─────────────────────────────────────────────
+// Revise Calendar with occupied dates
+// ─────────────────────────────────────────────
+class _ReviseCalendar extends StatefulWidget {
+  final Set<DateTime> selectedDates;
+  final bool Function(DateTime) isOccupied;
+  final void Function(DateTime) onDayTap;
+
+  const _ReviseCalendar({
+    required this.selectedDates,
+    required this.isOccupied,
+    required this.onDayTap,
+  });
+
+  @override
+  State<_ReviseCalendar> createState() => _ReviseCalendarState();
+}
+
+class _ReviseCalendarState extends State<_ReviseCalendar> {
+  late DateTime _focusedMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  }
+
+  String _monthLabel(DateTime date) {
+    const months = [
+      'January', 'February', 'March', 'April',
+      'May', 'June', 'July', 'August',
+      'September', 'October', 'November', 'December'
+    ];
+    return '${months[date.month - 1]} ${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final daysInMonth =
+        DateUtils.getDaysInMonth(_focusedMonth.year, _focusedMonth.month);
+    final firstWeekday =
+        DateTime(_focusedMonth.year, _focusedMonth.month, 1).weekday % 7;
+    final today = DateTime.now();
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            IconButton(
+              onPressed: () => setState(() => _focusedMonth =
+                  DateTime(_focusedMonth.year, _focusedMonth.month - 1)),
+              icon: const Icon(Icons.chevron_left, color: Color(0xFF4ECDC4)),
+            ),
+            Text(_monthLabel(_focusedMonth),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                    color: Color(0xFF1A1A2E))),
+            IconButton(
+              onPressed: () => setState(() => _focusedMonth =
+                  DateTime(_focusedMonth.year, _focusedMonth.month + 1)),
+              icon: const Icon(Icons.chevron_right, color: Color(0xFF4ECDC4)),
+            ),
+          ],
+        ),
+        Row(
+          children: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+              .map((d) => Expanded(
+                    child: Center(
+                      child: Text(d,
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[400])),
+                    ),
+                  ))
+              .toList(),
+        ),
+        const SizedBox(height: 4),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            childAspectRatio: 1,
+          ),
+          itemCount: firstWeekday + daysInMonth,
+          itemBuilder: (context, index) {
+            if (index < firstWeekday) return const SizedBox();
+            final day = DateTime(_focusedMonth.year, _focusedMonth.month,
+                index - firstWeekday + 1);
+            final normalized = DateTime(day.year, day.month, day.day);
+            final isSelected = widget.selectedDates.contains(normalized);
+            final isOccupied = widget.isOccupied(normalized);
+            final isPast = day.isBefore(DateTime(today.year, today.month, today.day));
+            final isToday = DateUtils.isSameDay(day, today);
+            final isDisabled = isOccupied || isPast;
+
+            Color bgColor = Colors.transparent;
+            Color textColor = const Color(0xFF1A1A2E);
+
+            if (isSelected) {
+              bgColor = const Color(0xFF4ECDC4);
+              textColor = Colors.white;
+            } else if (isOccupied) {
+              bgColor = Colors.grey.shade300;
+              textColor = Colors.grey.shade500;
+            } else if (isPast) {
+              textColor = Colors.grey.shade300;
+            }
+
+            return GestureDetector(
+              onTap: isDisabled ? null : () => widget.onDayTap(normalized),
+              child: Container(
+                margin: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  shape: BoxShape.circle,
+                  border: isToday && !isSelected && !isOccupied
+                      ? Border.all(color: const Color(0xFF4ECDC4), width: 1.5)
+                      : null,
+                ),
+                child: Center(
+                  child: Text(
+                    '${day.day}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: isSelected || isToday
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                      color: textColor,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ],
     );

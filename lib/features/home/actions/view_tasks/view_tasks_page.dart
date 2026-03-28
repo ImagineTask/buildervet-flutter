@@ -45,24 +45,24 @@ class ViewTasksPage extends StatelessWidget {
             return const _EmptyState();
           }
 
-          // Sort: negotiating first (until decision made), then by taskOrder
+          // Sort: revising first, then by taskOrder
           final tasks = snapshot.data!.docs
               .map((doc) => TaskModel.fromFirestore(doc))
               .toList()
             ..sort((a, b) {
-              final aIsNegotiating = a.status == 'negotiating' ? 0 : 1;
-              final bIsNegotiating = b.status == 'negotiating' ? 0 : 1;
-              if (aIsNegotiating != bIsNegotiating) {
-                return aIsNegotiating.compareTo(bIsNegotiating);
+              final aIsRevising = a.status == 'revising' ? 0 : 1;
+              final bIsRevising = b.status == 'revising' ? 0 : 1;
+              if (aIsRevising != bIsRevising) {
+                return aIsRevising.compareTo(bIsRevising);
               }
-              // Within same group, sort by taskOrder
               return (a.metadata['taskOrder'] ?? 0)
                   .compareTo(b.metadata['taskOrder'] ?? 0);
             });
 
-          // Count negotiating tasks for header badge
-          final negotiatingCount =
-              tasks.where((t) => t.status == 'negotiating').length;
+          final revisingCount =
+              tasks.where((t) => t.status == 'revising').length;
+          final unassignedCount =
+              tasks.where((t) => t.status == 'unassigned').length;
 
           return Column(
             children: [
@@ -78,10 +78,17 @@ class ViewTasksPage extends StatelessWidget {
                       const Color(0xFF6C63FF),
                     ),
                     const SizedBox(width: 8),
-                    if (negotiatingCount > 0)
+                    if (revisingCount > 0)
                       _summaryChip(
-                        '$negotiatingCount Negotiating',
+                        '$revisingCount Revising',
                         const Color(0xFF4ECDC4),
+                        hasAlert: true,
+                      ),
+                    const SizedBox(width: 8),
+                    if (unassignedCount > 0)
+                      _summaryChip(
+                        '$unassignedCount Unassigned',
+                        const Color(0xFFFF6B6B),
                         hasAlert: true,
                       ),
                     const Spacer(),
@@ -98,30 +105,27 @@ class ViewTasksPage extends StatelessWidget {
               ),
               const Divider(height: 1),
 
-              // Task list — negotiating tasks appear at top with section header
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: tasks.length + (negotiatingCount > 0 ? 2 : 0),
+                  itemCount: tasks.length + (revisingCount > 0 ? 2 : 0),
                   itemBuilder: (context, index) {
-                    // If there are negotiating tasks, insert section headers
-                    if (negotiatingCount > 0) {
+                    if (revisingCount > 0) {
                       if (index == 0) {
                         return _sectionHeader(
                           'Needs Decision',
                           const Color(0xFF4ECDC4),
-                          negotiatingCount,
+                          revisingCount,
                         );
                       }
-                      if (index == negotiatingCount + 1) {
+                      if (index == revisingCount + 1) {
                         return _sectionHeader(
                           'All Tasks',
                           const Color(0xFF6C63FF),
-                          tasks.length - negotiatingCount,
+                          tasks.length - revisingCount,
                         );
                       }
-                      // Offset index to account for first header
-                      final taskIndex = index <= negotiatingCount
+                      final taskIndex = index <= revisingCount
                           ? index - 1
                           : index - 2;
                       return OwnerTaskCard(task: tasks[taskIndex]);
@@ -161,8 +165,7 @@ class ViewTasksPage extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
               color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
@@ -181,11 +184,9 @@ class ViewTasksPage extends StatelessWidget {
     );
   }
 
-  Widget _summaryChip(String label, Color color,
-      {bool hasAlert = false}) {
+  Widget _summaryChip(String label, Color color, {bool hasAlert = false}) {
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(20),

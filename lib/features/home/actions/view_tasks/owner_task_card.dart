@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../../models/task_model.dart';
 import 'task_detail_page.dart';
@@ -14,14 +15,18 @@ class OwnerTaskCard extends StatefulWidget {
 }
 
 class _OwnerTaskCardState extends State<OwnerTaskCard> {
+
   // ── Helpers ─────────────────────────────────────────────────────────────
 
-  bool get _hasNegotiation =>
-      widget.task.metadata['negotiation'] != null &&
-      widget.task.status == 'negotiating';
+  bool get _hasRevision =>
+      widget.task.metadata['revision'] != null &&
+      widget.task.status == 'revising';
 
-  Map<String, dynamic> get _negotiation =>
-      Map<String, dynamic>.from(widget.task.metadata['negotiation'] ?? {});
+  Map<String, dynamic> get _revision =>
+      Map<String, dynamic>.from(widget.task.metadata['revision'] ?? {});
+
+  bool get _revisesFee => _revision['reviseFee'] == true;
+  bool get _revisesDeadline => _revision['reviseDeadline'] == true;
 
   List<String> get _scheduledDates {
     final dates = widget.task.metadata['scheduledDates'];
@@ -29,13 +34,21 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
     return List<String>.from(dates as List);
   }
 
+  List<String> get _requestedDates {
+    final dates = _revision['requestedDates'];
+    if (dates == null) return [];
+    return List<String>.from(dates as List);
+  }
+
   Color get _statusColor {
     switch (widget.task.status) {
+      case 'unassigned':
+        return const Color(0xFFFF6B6B);
       case 'pending_acceptance':
         return const Color(0xFFFFB347);
       case 'active':
         return const Color(0xFF6C63FF);
-      case 'negotiating':
+      case 'revising':
         return const Color(0xFF4ECDC4);
       case 'done':
         return const Color(0xFF43C59E);
@@ -48,12 +61,14 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
 
   String get _statusLabel {
     switch (widget.task.status) {
+      case 'unassigned':
+        return 'Unassigned';
       case 'pending_acceptance':
         return 'Awaiting';
       case 'active':
         return 'Active';
-      case 'negotiating':
-        return 'Negotiating';
+      case 'revising':
+        return 'Revising';
       case 'done':
         return 'Done';
       case 'denied':
@@ -72,63 +87,105 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
     }
   }
 
-  // ── Accept negotiation ───────────────────────────────────────────────────
-  Future<void> _acceptNegotiation(BuildContext context) async {
-    final requestedFee =
-        (_negotiation['requestedFee'] as num?)?.toDouble() ?? 0;
+  // ── Accept revision ──────────────────────────────────────────────────────
+  Future<void> _acceptRevision(BuildContext context) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
 
     try {
-      await FirebaseFirestore.instance
+      final now = DateTime.now().toUtc().toIso8601String();
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final taskRef = FirebaseFirestore.instance
           .collection('tasks')
-          .doc(widget.task.id)
-          .update({
-        'status': 'active',
-        'guidePrice': requestedFee,
-        'metadata.negotiation.resolvedAt':
-            DateTime.now().toIso8601String(),
-        'metadata.negotiation.resolution': 'accepted',
-        'updatedAt': FieldValue.serverTimestamp(),
+          .doc(widget.task.id);
+      final eventId = 'evt-${DateTime.now().millisecondsSinceEpoch}';
+
+      final batch = FirebaseFirestore.instance.batch();
+
+      final Map<String, dynamic> updates = {
+        'status': 'pending_acceptance',
+        'actionSpace': ['accept_task', 'deny_task', 'revise_task'],
+        'updatedAt': now,
+        'metadata.revision.resolvedAt': now,
+        'metadata.revision.resolution': 'accepted',
+      };
+
+      // Apply fee if revised
+      if (_revisesFee) {
+        final requestedFee =
+            (_revision['requestedFee'] as num?)?.toDouble() ?? 0;
+        updates['guidePrice'] = requestedFee;
+      }
+
+      // Apply dates if revised
+      if (_revisesDeadline && _requestedDates.isNotEmpty) {
+        final sortedDates = _requestedDates
+            .map((d) => DateTime.tryParse(d))
+            .whereType<DateTime>()
+            .toList()
+          ..sort();
+        updates['metadata.scheduledDates'] = _requestedDates;
+        updates['startTime'] = Timestamp.fromDate(sortedDates.first);
+        updates['endTime'] = Timestamp.fromDate(sortedDates.last);
+        updates['durationDays'] = sortedDates.length;
+      }
+
+      batch.update(taskRef, updates);
+
+      // Write event
+      final eventRef = taskRef.collection('events').doc(eventId);
+      batch.set(eventRef, {
+        'id': eventId,
+        'type': 'revision_accepted',
+        'timestamp': now,
+        'actorId': currentUser?.uid ?? widget.task.ownerId,
+        'actorName': currentUser?.displayName ?? 'Unknown',
+        'actorRole': 'homeowner',
+        'data': {
+          'previousStatus': 'revising',
+          'newStatus': 'pending_acceptance',
+          'revisionAccepted': true,
+        },
       });
 
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Negotiation accepted — task is now active'),
-            backgroundColor: Color(0xFF43C59E),
-          ),
-        );
-      }
+      await batch.commit();
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Revision accepted — task sent back to builder'),
+          backgroundColor: Color(0xFF43C59E),
+        ),
+      );
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to accept. Try again.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Failed to accept revision. Try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  // ── Decline negotiation ──────────────────────────────────────────────────
-  Future<void> _declineNegotiation(BuildContext context) async {
+  // ── Decline revision ─────────────────────────────────────────────────────
+  Future<void> _declineRevision(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Text('Decline Negotiation',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E))),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Decline Revision',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+        ),
         content: const Text(
-            'The task will be marked as denied.',
-            style: TextStyle(color: Colors.grey)),
+          'The revision will be rejected and the task will go back to the builder with original terms.',
+          style: TextStyle(color: Colors.grey),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.grey)),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
@@ -143,126 +200,59 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
       ),
     );
 
-    if (confirmed == true) {
-      try {
-        await FirebaseFirestore.instance
-            .collection('tasks')
-            .doc(widget.task.id)
-            .update({
-          'status': 'denied',
-          'metadata.negotiation.resolvedAt':
-              DateTime.now().toIso8601String(),
-          'metadata.negotiation.resolution': 'declined',
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Failed to decline. Try again.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    }
-  }
+    if (confirmed != true) return;
 
-  // ── Counter offer ────────────────────────────────────────────────────────
-  Future<void> _counterOffer(BuildContext context) async {
-    final controller = TextEditingController(
-        text: widget.task.guidePrice.toStringAsFixed(0));
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final taskRef = FirebaseFirestore.instance
+          .collection('tasks')
+          .doc(widget.task.id);
+      final eventId = 'evt-${DateTime.now().millisecondsSinceEpoch}';
 
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius:
-                BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Counter Offer',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF1A1A2E))),
-              const SizedBox(height: 4),
-              Text(
-                'Builder requested: £${(_negotiation['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
-                style: TextStyle(fontSize: 13, color: Colors.grey[500]),
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Your counter offer',
-                  prefixIcon: const Icon(Icons.currency_pound,
-                      color: Color(0xFF6C63FF)),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(
-                        color: Color(0xFF6C63FF), width: 2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final fee =
-                        double.tryParse(controller.text) ?? 0;
-                    Navigator.pop(context);
-                    await FirebaseFirestore.instance
-                        .collection('tasks')
-                        .doc(widget.task.id)
-                        .update({
-                      'guidePrice': fee,
-                      'metadata.negotiation.counterOffer': fee,
-                      'metadata.negotiation.counterOfferedAt':
-                          DateTime.now().toIso8601String(),
-                      'updatedAt': FieldValue.serverTimestamp(),
-                    });
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Counter offer sent'),
-                          backgroundColor: Color(0xFF6C63FF),
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF6C63FF),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Text('Send Counter Offer',
-                      style: TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold)),
-                ),
-              ),
-            ],
-          ),
+      final batch = FirebaseFirestore.instance.batch();
+
+      // Reset back to pending_acceptance with original values
+      batch.update(taskRef, {
+        'status': 'pending_acceptance',
+        'actionSpace': ['accept_task', 'deny_task', 'revise_task'],
+        'updatedAt': now,
+        'metadata.revision.resolvedAt': now,
+        'metadata.revision.resolution': 'declined',
+      });
+
+      // Write event
+      final eventRef = taskRef.collection('events').doc(eventId);
+      batch.set(eventRef, {
+        'id': eventId,
+        'type': 'revision_declined',
+        'timestamp': now,
+        'actorId': currentUser?.uid ?? widget.task.ownerId,
+        'actorName': currentUser?.displayName ?? 'Unknown',
+        'actorRole': 'homeowner',
+        'data': {
+          'previousStatus': 'revising',
+          'newStatus': 'pending_acceptance',
+          'revisionAccepted': false,
+        },
+      });
+
+      await batch.commit();
+
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Revision declined — original terms kept'),
+          backgroundColor: Color(0xFFFF6B6B),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Failed to decline revision. Try again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
@@ -275,16 +265,14 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => TaskDetailPage(task: task),
-        ),
+        MaterialPageRoute(builder: (_) => TaskDetailPage(task: task)),
       ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
-          border: _hasNegotiation
+          border: _hasRevision
               ? Border.all(color: const Color(0xFF4ECDC4), width: 1.5)
               : null,
           boxShadow: [
@@ -377,7 +365,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: task.assignedBuilderIds
-                                    .map((id) => FutureBuilder<DocumentSnapshot>(
+                                    .map((id) =>
+                                        FutureBuilder<DocumentSnapshot>(
                                           future: FirebaseFirestore.instance
                                               .collection('users')
                                               .doc(id)
@@ -406,7 +395,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                   ),
                   const SizedBox(height: 6),
 
-                  // ── Scheduled dates as chips ───────────────────────────
+                  // Scheduled dates
                   if (dates.isEmpty)
                     Row(
                       children: [
@@ -438,30 +427,34 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                         Wrap(
                           spacing: 4,
                           runSpacing: 4,
-                          children: dates.map((iso) => Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF6C63FF).withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: const Color(0xFF6C63FF)
-                                      .withOpacity(0.2)),
-                            ),
-                            child: Text(
-                              _formatScheduledDate(iso),
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF6C63FF),
-                                  fontWeight: FontWeight.w500),
-                            ),
-                          )).toList(),
+                          children: dates
+                              .map((iso) => Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF6C63FF)
+                                          .withOpacity(0.08),
+                                      borderRadius:
+                                          BorderRadius.circular(20),
+                                      border: Border.all(
+                                          color: const Color(0xFF6C63FF)
+                                              .withOpacity(0.2)),
+                                    ),
+                                    child: Text(
+                                      _formatScheduledDate(iso),
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Color(0xFF6C63FF),
+                                          fontWeight: FontWeight.w500),
+                                    ),
+                                  ))
+                              .toList(),
                         ),
                       ],
                     ),
                   const SizedBox(height: 6),
 
-                  // Guide price range
+                  // Guide price
                   Row(
                     children: [
                       Icon(Icons.currency_pound,
@@ -475,7 +468,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     ],
                   ),
 
-                  // ── Quote & Agreed prices ──────────────────────────────
+                  // Quote & Agreed prices
                   if (task.hasQuote) ...[
                     const SizedBox(height: 6),
                     if (task.agreedTotal != null &&
@@ -484,7 +477,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                       Row(
                         children: [
                           Icon(Icons.fiber_new_rounded,
-                              size: 14, color: const Color(0xFFFF6B6B)),
+                              size: 14,
+                              color: const Color(0xFFFF6B6B)),
                           const SizedBox(width: 4),
                           Text(
                             'New Quote: £${(task.quoteTotal ?? 0).toStringAsFixed(0)}',
@@ -503,7 +497,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                       Row(
                         children: [
                           Icon(Icons.check_circle_outline,
-                              size: 13, color: const Color(0xFF43C59E)),
+                              size: 13,
+                              color: const Color(0xFF43C59E)),
                           const SizedBox(width: 6),
                           Text(
                             'Agreed: £${(task.agreedTotal ?? 0).toStringAsFixed(0)}',
@@ -519,34 +514,13 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                         ],
                       ),
                     ],
-
-                    if (task.quoteStatus == 'declined' &&
-                        task.quoteDeclineReason != null &&
-                        task.quoteDeclineReason!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.message_outlined,
-                              size: 11, color: Colors.grey[400]),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              task.quoteDeclineReason!,
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey[500]),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
                   ],
                 ],
               ),
             ),
 
-            // ── Negotiation Section ──────────────────────────────────────
-            if (_hasNegotiation) ...[
+            // ── Revision Section ─────────────────────────────────────────
+            if (_hasRevision) ...[
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -560,13 +534,14 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Header
                     Row(
                       children: [
-                        const Icon(Icons.handshake_outlined,
+                        const Icon(Icons.edit_note_outlined,
                             size: 16, color: Color(0xFF4ECDC4)),
                         const SizedBox(width: 6),
                         const Text(
-                          'Negotiation Request',
+                          'Revision Request',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
@@ -574,9 +549,9 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                           ),
                         ),
                         const Spacer(),
-                        if (_negotiation['submittedAt'] != null)
+                        if (_revision['submittedAt'] != null)
                           Text(
-                            _formatDate(_negotiation['submittedAt']),
+                            _formatDate(_revision['submittedAt']),
                             style: TextStyle(
                                 fontSize: 11, color: Colors.grey[400]),
                           ),
@@ -584,33 +559,85 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     ),
                     const SizedBox(height: 12),
 
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _negotiationFeeBox(
-                            label: 'Current Fee',
-                            amount:
-                                '£${(_negotiation['currentFee'] as num?)?.toStringAsFixed(0) ?? task.guidePrice.toStringAsFixed(0)}',
-                            color: Colors.grey,
+                    // Fee revision
+                    if (_revisesFee) ...[
+                      _sectionLabel('Fee Revision'),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _infoBox(
+                              label: 'Current Fee',
+                              value:
+                                  '£${(_revision['currentFee'] as num?)?.toStringAsFixed(0) ?? widget.task.guidePrice.toStringAsFixed(0)}',
+                              color: Colors.grey,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.arrow_forward,
-                            size: 16, color: Colors.grey),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _negotiationFeeBox(
-                            label: 'Requested Fee',
-                            amount:
-                                '£${(_negotiation['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
-                            color: const Color(0xFF4ECDC4),
-                            highlight: true,
+                          const SizedBox(width: 8),
+                          const Icon(Icons.arrow_forward,
+                              size: 16, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _infoBox(
+                              label: 'Requested Fee',
+                              value:
+                                  '£${(_revision['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                              color: const Color(0xFF4ECDC4),
+                              highlight: true,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
 
+                    // Deadline revision
+                    if (_revisesDeadline && _requestedDates.isNotEmpty) ...[
+                      _sectionLabel('Deadline Revision'),
+                      const SizedBox(height: 8),
+                      // Current dates
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Current: ',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey[500])),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: _scheduledDates
+                                  .map((iso) => _datechip(
+                                      iso, Colors.grey.shade400))
+                                  .toList(),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      // Requested dates
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Requested: ',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.grey[500])),
+                          Expanded(
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: _requestedDates
+                                  .map((iso) => _datechip(
+                                      iso, const Color(0xFF4ECDC4)))
+                                  .toList(),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
+                    // Reason
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(10),
@@ -627,7 +654,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              _negotiation['reason'] ?? '',
+                              _revision['reason'] ?? '',
                               style: TextStyle(
                                   fontSize: 12, color: Colors.grey[600]),
                             ),
@@ -637,11 +664,12 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                     ),
                     const SizedBox(height: 16),
 
+                    // Accept / Decline buttons
                     Row(
                       children: [
                         Expanded(
                           child: GestureDetector(
-                            onTap: () => _acceptNegotiation(context),
+                            onTap: () => _acceptRevision(context),
                             child: Container(
                               padding:
                                   const EdgeInsets.symmetric(vertical: 10),
@@ -668,34 +696,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: GestureDetector(
-                            onTap: () => _counterOffer(context),
-                            child: Container(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF6C63FF),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.swap_horiz_rounded,
-                                      color: Colors.white, size: 16),
-                                  SizedBox(width: 4),
-                                  Text('Counter',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => _declineNegotiation(context),
+                            onTap: () => _declineRevision(context),
                             child: Container(
                               padding:
                                   const EdgeInsets.symmetric(vertical: 10),
@@ -731,9 +732,21 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
     );
   }
 
-  Widget _negotiationFeeBox({
+  Widget _sectionLabel(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A2E),
+          ),
+        ),
+      );
+
+  Widget _infoBox({
     required String label,
-    required String amount,
+    required String value,
     required Color color,
     bool highlight = false,
   }) {
@@ -743,7 +756,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
         color: highlight ? color.withOpacity(0.1) : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: highlight ? color.withOpacity(0.3) : Colors.grey.shade200,
+          color:
+              highlight ? color.withOpacity(0.3) : Colors.grey.shade200,
         ),
       ),
       child: Column(
@@ -752,7 +766,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
               style: TextStyle(fontSize: 10, color: Colors.grey[500])),
           const SizedBox(height: 4),
           Text(
-            amount,
+            value,
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -760,6 +774,22 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _datechip(String iso, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Text(
+        _formatScheduledDate(iso),
+        style: TextStyle(
+            fontSize: 11, color: color, fontWeight: FontWeight.w500),
       ),
     );
   }
@@ -774,53 +804,9 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// _PriceColumn — label + amount stacked vertically
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _PriceColumn extends StatelessWidget {
-  final String label;
-  final double amount;
-  final Color color;
-
-  const _PriceColumn({
-    required this.label,
-    required this.amount,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 10, color: Colors.grey[400]),
-        ),
-        const SizedBox(height: 2),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.currency_pound, size: 10, color: color),
-            Text(
-              amount.toStringAsFixed(0),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// _QuoteStatusBadge — compact inline badge
-// ─────────────────────────────────────────────────────────────────────────────
-
+// ─────────────────────────────────────────────
+// _QuoteStatusBadge
+// ─────────────────────────────────────────────
 class _QuoteStatusBadge extends StatelessWidget {
   final String status;
   const _QuoteStatusBadge({required this.status});
@@ -829,7 +815,7 @@ class _QuoteStatusBadge extends StatelessWidget {
     switch (status) {
       case 'accepted': return const Color(0xFF43C59E);
       case 'declined': return const Color(0xFFFF6B6B);
-      default:         return const Color(0xFFFFB347);
+      default: return const Color(0xFFFFB347);
     }
   }
 
@@ -837,7 +823,7 @@ class _QuoteStatusBadge extends StatelessWidget {
     switch (status) {
       case 'accepted': return 'Approved';
       case 'declined': return 'Declined';
-      default:         return 'Pending';
+      default: return 'Pending';
     }
   }
 
@@ -846,9 +832,9 @@ class _QuoteStatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.1),
+        color: _color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _color.withValues(alpha: 0.3)),
+        border: Border.all(color: _color.withOpacity(0.3)),
       ),
       child: Text(
         _label,
@@ -858,81 +844,6 @@ class _QuoteStatusBadge extends StatelessWidget {
           color: _color,
         ),
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// _QuoteStatusRow — shows quote status + decline reason if any
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _QuoteStatusRow extends StatelessWidget {
-  final String status;
-  final String? declineReason;
-
-  const _QuoteStatusRow({required this.status, this.declineReason});
-
-  Color get _color {
-    switch (status) {
-      case 'accepted':
-        return const Color(0xFF43C59E);
-      case 'declined':
-        return const Color(0xFFFF6B6B);
-      default:
-        return const Color(0xFFFFB347);
-    }
-  }
-
-  String get _label {
-    switch (status) {
-      case 'accepted':
-        return 'Quote Approved';
-      case 'declined':
-        return 'Quote Declined';
-      default:
-        return 'Quote Pending';
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.circle, size: 8, color: _color),
-            const SizedBox(width: 6),
-            Text(
-              _label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: _color,
-              ),
-            ),
-          ],
-        ),
-        if (status == 'declined' &&
-            declineReason != null &&
-            declineReason!.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.message_outlined,
-                  size: 11, color: Colors.grey[400]),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  declineReason!,
-                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
     );
   }
 }
