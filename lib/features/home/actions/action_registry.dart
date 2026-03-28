@@ -12,7 +12,7 @@ import 'view_details/view_details_action.dart';
 import 'add_note/add_note_action.dart';
 import 'accept_task/accept_task_action.dart';
 import 'deny_task/deny_task_action.dart';
-import 'negotiate_task/negotiate_task_action.dart';
+import 'revise_task/revise_task_action.dart';
 import 'marketing/marketing_action.dart';
 import 'customised/customised_action.dart';
 
@@ -45,8 +45,8 @@ class ActionRegistry {
         return AcceptTaskAction(project: project);
       case 'deny_task':
         return DenyTaskAction(project: project);
-      case 'negotiate_task':
-        return NegotiateTaskAction(project: project);
+      case 'revise_task':
+        return ReviseTaskAction(project: project);
       case 'marketing':
         return MarketingAction(project: project);
       case 'customised':

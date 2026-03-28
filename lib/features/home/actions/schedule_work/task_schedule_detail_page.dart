@@ -147,20 +147,23 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
       final sortedDates = selectedDates.toList()..sort();
       final dateStrings =
           sortedDates.map((d) => d.toIso8601String()).toList();
+      final now = DateTime.now().toUtc().toIso8601String();
 
       await FirebaseFirestore.instance
           .collection('tasks')
           .doc(widget.task.id)
           .update({
         'assignedBuilderIds': selectedBuilderIds,
+        'participantIds': FieldValue.arrayUnion(selectedBuilderIds),
         'metadata.scheduledDates': dateStrings,
-        'scheduledDates': FieldValue.delete(), // clean up root level
+        'scheduledDates': FieldValue.delete(),
         'startTime': Timestamp.fromDate(sortedDates.first),
         'endTime': Timestamp.fromDate(sortedDates.last),
         'durationDays': selectedDates.length,
         'guidePrice': fee,
-        'status': 'pending_acceptance', // ← set status
-        'updatedAt': FieldValue.serverTimestamp(),
+        'status': 'pending_acceptance',
+        'actionSpace': ['accept_task', 'deny_task', 'revise_task'],
+        'updatedAt': now,
       });
 
       if (mounted) {
@@ -441,7 +444,7 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                           Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: Text(
-                              'Guide price: \$${widget.task.guidePriceMin.toStringAsFixed(0)} – \$${widget.task.guidePriceMax.toStringAsFixed(0)}',
+                              'Guide price: £${widget.task.guidePriceMin.toStringAsFixed(0)} – £${widget.task.guidePriceMax.toStringAsFixed(0)}',
                               style: const TextStyle(
                                   fontSize: 13, color: Colors.grey),
                             ),
@@ -451,7 +454,7 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                           keyboardType: TextInputType.number,
                           decoration: InputDecoration(
                             hintText: 'Enter agreed fee',
-                            prefixIcon: const Icon(Icons.attach_money,
+                            prefixIcon: const Icon(Icons.currency_pound,
                                 color: Color(0xFF6C63FF)),
                             border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10)),
@@ -611,8 +614,7 @@ class _InlineCalendarState extends State<_InlineCalendar> {
             IconButton(
               onPressed: () => setState(() => _focusedMonth =
                   DateTime(_focusedMonth.year, _focusedMonth.month - 1)),
-              icon:
-                  const Icon(Icons.chevron_left, color: Color(0xFF6C63FF)),
+              icon: const Icon(Icons.chevron_left, color: Color(0xFF6C63FF)),
             ),
             Text(_monthLabel(_focusedMonth),
                 style: const TextStyle(
@@ -622,8 +624,7 @@ class _InlineCalendarState extends State<_InlineCalendar> {
             IconButton(
               onPressed: () => setState(() => _focusedMonth =
                   DateTime(_focusedMonth.year, _focusedMonth.month + 1)),
-              icon:
-                  const Icon(Icons.chevron_right, color: Color(0xFF6C63FF)),
+              icon: const Icon(Icons.chevron_right, color: Color(0xFF6C63FF)),
             ),
           ],
         ),

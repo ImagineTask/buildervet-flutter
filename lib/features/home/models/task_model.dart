@@ -43,6 +43,18 @@ class TaskModel {
   bool get hasQuote => quoteBuilderId != null;
   bool get hasAgreedPrice => agreedTotal != null;
 
+  // ── Type helpers ─────────────────────────────────────────────────────────
+  bool get isProject => taskType == 'project';
+  bool get isTask => taskType == 'task';
+
+  // ── Status helpers ────────────────────────────────────────────────────────
+  bool get isUnassigned => status == 'unassigned';
+  bool get isPendingAcceptance => status == 'pending_acceptance';
+  bool get isRevising => status == 'revising';
+  bool get isActive => status == 'active';
+  bool get isDenied => status == 'denied';
+  bool get isDone => status == 'done';
+
   TaskModel({
     required this.id,
     required this.taskId,
@@ -79,9 +91,6 @@ class TaskModel {
     this.quoteDeclineReason,
     this.quoteUpdateReason,
   });
-
-  bool get isProject => taskType == 'project';
-  bool get isTask => taskType == 'task';
 
   TaskModel copyWith({
     String? id,
@@ -165,7 +174,7 @@ class TaskModel {
       taskName: d['taskName'] ?? '',
       description: d['description'] ?? '',
       taskType: d['taskType'] ?? 'task',
-      status: d['status'] ?? 'draft',
+      status: d['status'] ?? 'unassigned',
       parentTaskId: d['parentTaskId'],
       contractorType: d['contractorType'],
       startTime: _parseDate(d['startTime']),
@@ -176,8 +185,7 @@ class TaskModel {
       guidePriceMax: (d['guidePriceMax'] ?? 0).toDouble(),
       actionSpace: List<String>.from(d['actionSpace'] ?? []),
       participantIds: List<String>.from(d['participantIds'] ?? []),
-      assignedBuilderIds:
-          List<String>.from(d['assignedBuilderIds'] ?? []),
+      assignedBuilderIds: List<String>.from(d['assignedBuilderIds'] ?? []),
       ownerId: d['ownerId'] ?? '',
       createdAt: _parseDate(d['createdAt']),
       updatedAt: _parseDate(d['updatedAt']),

@@ -1,43 +1,60 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../base_action_tile.dart';
 
-class NegotiateTaskAction extends BaseActionTile {
-  const NegotiateTaskAction({super.key, required super.project});
+class ReviseTaskAction extends BaseActionTile {
+  const ReviseTaskAction({super.key, required super.project});
 
   @override
-  IconData get icon => Icons.handshake_outlined;
+  bool get isDisabled =>
+      project.status == 'done' ||
+      project.status == 'denied' ||
+      project.status == 'unassigned';
 
   @override
-  String get label => 'Negotiate\nTask';
+  String get disabledReason {
+    if (project.status == 'done') return 'Task is completed';
+    if (project.status == 'denied') return 'Task has been denied';
+    if (project.status == 'unassigned') return 'Task has not been assigned yet';
+    return '';
+  }
+
+  @override
+  IconData get icon => Icons.edit_note_outlined;
+
+  @override
+  String get label => 'Revise\nTask';
 
   @override
   Color get color => const Color(0xFF4ECDC4);
 
   @override
   void onTap(BuildContext context) {
+    if (isDisabled) return;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _NegotiationSheet(task: project),
+      builder: (_) => _ReviseSheet(task: project),
     );
   }
 }
 
 // ─────────────────────────────────────────────
-// Negotiation Bottom Sheet
+// Revise Bottom Sheet
 // ─────────────────────────────────────────────
-class _NegotiationSheet extends StatefulWidget {
+class _ReviseSheet extends StatefulWidget {
   final dynamic task;
 
-  const _NegotiationSheet({required this.task});
+  const _ReviseSheet({required this.task});
 
   @override
-  State<_NegotiationSheet> createState() => _NegotiationSheetState();
+  State<_ReviseSheet> createState() => _ReviseSheetState();
 }
 
-class _NegotiationSheetState extends State<_NegotiationSheet> {
+class _ReviseSheetState extends State<_ReviseSheet> {
   final _requestedFeeController = TextEditingController();
   final _reasonController = TextEditingController();
   String? _selectedReason;
@@ -56,10 +73,8 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
   @override
   void initState() {
     super.initState();
-    // Pre-fill current fee
     if (widget.task.guidePrice > 0) {
-      _requestedFeeController.text =
-          widget.task.guidePrice.toStringAsFixed(0);
+      _requestedFeeController.text = widget.task.guidePrice.toStringAsFixed(0);
     }
   }
 
@@ -79,8 +94,7 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
       _showSnack('Please enter your requested fee');
       return;
     }
-    if (_selectedReason == 'Other' &&
-        _reasonController.text.trim().isEmpty) {
+    if (_selectedReason == 'Other' && _reasonController.text.trim().isEmpty) {
       _showSnack('Please describe your reason');
       return;
     }
@@ -88,31 +102,56 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
     setState(() => _isSaving = true);
 
     try {
-      final requestedFee =
-          double.tryParse(_requestedFeeController.text.trim()) ?? 0;
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final firestore = FirebaseFirestore.instance;
+      final taskRef = firestore.collection('tasks').doc(widget.task.id);
+      final requestedFee = double.tryParse(_requestedFeeController.text.trim()) ?? 0;
       final reason = _selectedReason == 'Other'
           ? _reasonController.text.trim()
           : _selectedReason!;
+      final now = DateTime.now().toUtc().toIso8601String();
+      final eventId = 'evt-${DateTime.now().millisecondsSinceEpoch}';
 
-      await FirebaseFirestore.instance
-          .collection('tasks')
-          .doc(widget.task.id)
-          .update({
-        'status': 'negotiating',
-        'metadata.negotiation': {
+      final batch = firestore.batch();
+
+      // 1. Update task
+      batch.update(taskRef, {
+        'status': 'revising',
+        'updatedAt': now,
+        'actionSpace': ['accept_task', 'deny_task', 'revise_task'],
+        'metadata.revision': {
           'requestedFee': requestedFee,
           'currentFee': widget.task.guidePrice,
           'reason': reason,
-          'submittedAt': DateTime.now().toIso8601String(),
+          'submittedAt': now,
         },
-        'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // 2. Write event to subcollection
+      final eventRef = taskRef.collection('events').doc(eventId);
+      batch.set(eventRef, {
+        'id': eventId,
+        'type': 'task_revised',
+        'timestamp': now,
+        'actorId': currentUser?.uid ?? widget.task.ownerId,
+        'actorName': currentUser?.displayName ?? 'Unknown',
+        'actorRole': 'builder', // builder is requesting the revision
+        'data': {
+          'previousStatus': widget.task.status,
+          'newStatus': 'revising',
+          'requestedFee': requestedFee,
+          'currentFee': widget.task.guidePrice,
+          'reason': reason,
+        },
+      });
+
+      await batch.commit();
 
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Negotiation request sent to project owner'),
+            content: Text('Revision request sent to project owner'),
             backgroundColor: Color(0xFF4ECDC4),
           ),
         );
@@ -162,7 +201,7 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'Negotiate Task',
+                    'Revise Task',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -170,19 +209,17 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFF4ECDC4).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.handshake_outlined,
-                            size: 14, color: Color(0xFF4ECDC4)),
+                        Icon(Icons.edit_note_outlined, size: 14, color: Color(0xFF4ECDC4)),
                         SizedBox(width: 4),
                         Text(
-                          'Negotiating',
+                          'Revising',
                           style: TextStyle(
                             fontSize: 12,
                             color: Color(0xFF4ECDC4),
@@ -226,16 +263,11 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                           Expanded(
                             child: _feeInfoItem(
                               label: 'Current Fee',
-                              value:
-                                  '£${widget.task.guidePrice.toStringAsFixed(0)}',
+                              value: '£${widget.task.guidePrice.toStringAsFixed(0)}',
                               color: const Color(0xFF1A1A2E),
                             ),
                           ),
-                          Container(
-                            width: 1,
-                            height: 40,
-                            color: Colors.grey[300],
-                          ),
+                          Container(width: 1, height: 40, color: Colors.grey[300]),
                           Expanded(
                             child: _feeInfoItem(
                               label: 'Guide Range',
@@ -250,27 +282,23 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                     const SizedBox(height: 24),
 
                     // Reason selector
-                    _label('Reason for Negotiation'),
+                    _label('Reason for Revision'),
                     const SizedBox(height: 10),
                     ...(_reasonOptions.map((reason) {
                       final isSelected = _selectedReason == reason;
                       return GestureDetector(
-                        onTap: () =>
-                            setState(() => _selectedReason = reason),
+                        onTap: () => setState(() => _selectedReason = reason),
                         child: Container(
                           width: double.infinity,
                           margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? const Color(0xFF4ECDC4).withOpacity(0.08)
                                 : Colors.grey.shade50,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isSelected
-                                  ? const Color(0xFF4ECDC4)
-                                  : Colors.grey.shade200,
+                              color: isSelected ? const Color(0xFF4ECDC4) : Colors.grey.shade200,
                               width: isSelected ? 1.5 : 1,
                             ),
                           ),
@@ -280,9 +308,7 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                                 isSelected
                                     ? Icons.check_circle_rounded
                                     : Icons.radio_button_unchecked,
-                                color: isSelected
-                                    ? const Color(0xFF4ECDC4)
-                                    : Colors.grey[400],
+                                color: isSelected ? const Color(0xFF4ECDC4) : Colors.grey[400],
                                 size: 20,
                               ),
                               const SizedBox(width: 10),
@@ -291,12 +317,8 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                                   reason,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: isSelected
-                                        ? const Color(0xFF1A1A2E)
-                                        : Colors.grey[600],
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
+                                    color: isSelected ? const Color(0xFF1A1A2E) : Colors.grey[600],
+                                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                                   ),
                                 ),
                               ),
@@ -315,12 +337,10 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                         decoration: InputDecoration(
                           hintText: 'Describe your reason...',
                           hintStyle: TextStyle(color: Colors.grey[400]),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(
-                                color: Color(0xFF4ECDC4), width: 2),
+                            borderSide: const BorderSide(color: Color(0xFF4ECDC4), width: 2),
                           ),
                         ),
                       ),
@@ -332,8 +352,7 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                     const SizedBox(height: 4),
                     Text(
                       'Enter the fee you would accept for this task',
-                      style:
-                          TextStyle(fontSize: 12, color: Colors.grey[500]),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                     ),
                     const SizedBox(height: 10),
                     TextField(
@@ -341,14 +360,11 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                       keyboardType: TextInputType.number,
                       decoration: InputDecoration(
                         hintText: 'Enter amount',
-                        prefixIcon: const Icon(Icons.currency_pound,
-                            color: Color(0xFF4ECDC4)),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                        prefixIcon: const Icon(Icons.currency_pound, color: Color(0xFF4ECDC4)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(
-                              color: Color(0xFF4ECDC4), width: 2),
+                          borderSide: const BorderSide(color: Color(0xFF4ECDC4), width: 2),
                         ),
                       ),
                     ),
@@ -362,23 +378,18 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF4ECDC4),
                           foregroundColor: Colors.white,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
                         child: _isSaving
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
-                                child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2),
+                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                               )
                             : const Text(
-                                'Send Negotiation Request',
-                                style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold),
+                                'Send Revision Request',
+                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                               ),
                       ),
                     ),
@@ -408,16 +419,11 @@ class _NegotiationSheetState extends State<_NegotiationSheet> {
   }) {
     return Column(
       children: [
-        Text(label,
-            style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
         const SizedBox(height: 4),
         Text(
           value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
         ),
       ],
     );

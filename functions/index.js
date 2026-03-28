@@ -25,7 +25,7 @@ exports.onTaskAssigned = onDocumentCreated("tasks/{taskId}", async (event) => {
   await notifyRecipients(recipientIds, "New Task Assigned", task.taskName, taskId);
 });
 
-// Trigger on UPDATE — builder added or quote sent
+// Trigger on UPDATE — builder added, quote sent, task denied, task revised
 exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
   const before = event.data.before.data();
   const after = event.data.after.data();
@@ -33,19 +33,12 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
 
   console.log("🔄 onTaskUpdated fired for taskId:", taskId);
   console.log("📋 taskType:", after.taskType);
-  console.log("📋 quoteLastSentAt before:", before.quoteLastSentAt ?? "NULL");
-  console.log("📋 quoteLastSentAt after:", after.quoteLastSentAt ?? "NULL");
-  console.log("📋 quoteLastSentTo:", after.quoteLastSentTo ?? "NULL");
 
   // ── Quote notification: fires on project task whenever quote is sent/resent
   if (after.taskType === "project") {
     const beforeSentAt = before.quoteLastSentAt?.toMillis?.() ?? null;
     const afterSentAt = after.quoteLastSentAt?.toMillis?.() ?? null;
     const quoteWasSent = afterSentAt !== beforeSentAt && afterSentAt !== null;
-
-    console.log("📋 beforeSentAt (ms):", beforeSentAt);
-    console.log("📋 afterSentAt (ms):", afterSentAt);
-    console.log("📋 quoteWasSent:", quoteWasSent);
 
     if (quoteWasSent && after.quoteLastSentTo) {
       console.log("🔔 Quote sent/resent to:", after.quoteLastSentTo);
@@ -59,16 +52,51 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
     return;
   }
 
-  // ── Builder assignment notification: fires on child tasks only ────────────
   if (after.taskType !== "task") return;
 
+  const beforeStatus = before.status ?? "";
+  const afterStatus = after.status ?? "";
   const beforeBuilderIds = before.assignedBuilderIds ?? [];
   const afterBuilderIds = after.assignedBuilderIds ?? [];
 
+  // ── Builder assignment notification ───────────────────────────────────────
   const newlyAssigned = afterBuilderIds.filter(id => !beforeBuilderIds.includes(id));
   if (newlyAssigned.length > 0) {
-    console.log("🔔 onTaskUpdated — new builders:", newlyAssigned);
+    console.log("🔔 New builders assigned:", newlyAssigned);
     await notifyRecipients(newlyAssigned, "New Task Assigned", after.taskName, taskId);
+  }
+
+  // ── Task denied → notify project owner ────────────────────────────────────
+  if (beforeStatus !== "unassigned" && afterStatus === "unassigned" && after.ownerId) {
+    console.log("🔔 Task denied — notifying project owner:", after.ownerId);
+    await notifyRecipients(
+      [after.ownerId],
+      "Task Denied",
+      `A builder has denied the task: "${after.taskName}". Please reassign it.`,
+      taskId
+    );
+  }
+
+  // ── Task revised → notify project owner ───────────────────────────────────
+  if (beforeStatus !== "revising" && afterStatus === "revising" && after.ownerId) {
+    console.log("🔔 Task revised — notifying project owner:", after.ownerId);
+    await notifyRecipients(
+      [after.ownerId],
+      "Revision Requested",
+      `A builder has requested a revision for: "${after.taskName}". Please review it.`,
+      taskId
+    );
+  }
+
+  // ── Task accepted → notify project owner ──────────────────────────────────
+  if (beforeStatus !== "active" && afterStatus === "active" && after.ownerId) {
+    console.log("🔔 Task accepted — notifying project owner:", after.ownerId);
+    await notifyRecipients(
+      [after.ownerId],
+      "Task Accepted",
+      `A builder has accepted the task: "${after.taskName}".`,
+      taskId
+    );
   }
 });
 
@@ -94,7 +122,6 @@ async function notifyRecipients(recipientIds, title, body, taskId) {
           });
           console.log("✅ Push sent to:", recipientId);
         } catch (fcmErr) {
-          // Token is stale — remove it from Firestore so it doesn't keep failing
           if (
             fcmErr.errorInfo?.code === "messaging/registration-token-not-registered" ||
             fcmErr.errorInfo?.code === "messaging/invalid-registration-token"
