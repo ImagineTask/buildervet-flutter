@@ -4,17 +4,39 @@ import 'content/tasks_content.dart';
 import '../AI/ai_request_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'profile/profile_screen.dart';
+import '../../../main.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final int initialTab;
+  const HomeScreen({super.key, this.initialTab = 0});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedTab = 0;
+  late int _selectedTab;
   final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedTab = widget.initialTab;
+    homeTabNotifier.addListener(_onTabNotified);
+  }
+
+  @override
+  void dispose() {
+    homeTabNotifier.removeListener(_onTabNotified);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onTabNotified() {
+    if (homeTabNotifier.value == 0) return; // ignore the reset
+    setState(() => _selectedTab = homeTabNotifier.value);
+    Future.microtask(() => homeTabNotifier.value = 0);
+  }
 
   User? get _user => FirebaseAuth.instance.currentUser;
 
@@ -41,12 +63,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (hour < 12) return 'Good Morning 👋';
     if (hour < 17) return 'Good Afternoon 👋';
     return 'Good Evening 👋';
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
   }
 
   @override
@@ -107,7 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Search Bar — taps open AI Request screen
+              // Search Bar
               GestureDetector(
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
@@ -135,9 +151,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.grey[400],
                           fontSize: 14,
                         ),
-                        prefixIcon: Icon(
+                        prefixIcon: const Icon(
                           Icons.auto_awesome_rounded,
-                          color: const Color(0xFF6C63FF),
+                          color: Color(0xFF6C63FF),
                           size: 20,
                         ),
                         suffixIcon: Container(
@@ -202,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 20),
 
-              // Content Area: Projects or Tasks
+              // Content Area
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
                 child: _selectedTab == 0
@@ -239,7 +255,9 @@ class _TabButton extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFF6C63FF) : Colors.transparent,
+            color: isSelected
+                ? const Color(0xFF6C63FF)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -319,18 +337,3 @@ class _StatCard extends StatelessWidget {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

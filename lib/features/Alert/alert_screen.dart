@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../features/Home/models/task_model.dart';
+import '../../features/Home/actions/view_tasks/view_tasks_page.dart';
+import '../../../main.dart';
 
 class AlertScreen extends StatelessWidget {
   const AlertScreen({super.key});
@@ -24,6 +27,7 @@ class AlertScreen extends StatelessWidget {
                 time: _formatTime(d['createdAt']),
                 type: _parseType(d['type']),
                 isRead: d['isRead'] ?? false,
+                taskId: d['taskId'],
               );
             }).toList());
   }
@@ -34,18 +38,24 @@ class AlertScreen extends StatelessWidget {
     final diff = DateTime.now().difference(dt);
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
-    if (diff.inHours < 24) return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
+    if (diff.inHours < 24)
+      return '${diff.inHours} hour${diff.inHours > 1 ? 's' : ''} ago';
     if (diff.inDays == 1) return 'Yesterday';
     return '${diff.inDays} days ago';
   }
 
   static AlertType _parseType(String? type) {
     switch (type) {
-      case 'warning': return AlertType.warning;
-      case 'error': return AlertType.error;
-      case 'success': return AlertType.success;
-      case 'security': return AlertType.security;
-      default: return AlertType.info;
+      case 'warning':
+        return AlertType.warning;
+      case 'error':
+        return AlertType.error;
+      case 'success':
+        return AlertType.success;
+      case 'security':
+        return AlertType.security;
+      default:
+        return AlertType.info;
     }
   }
 
@@ -80,14 +90,17 @@ class AlertScreen extends StatelessWidget {
         .delete();
   }
 
-  Future<void> _deleteAll(BuildContext context, String uid, List<_Alert> alerts) async {
+  Future<void> _deleteAll(
+      BuildContext context, String uid, List<_Alert> alerts) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Clear All Notifications',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
         ),
         content: const Text(
           'Are you sure you want to delete all notifications? This cannot be undone.',
@@ -96,13 +109,15 @@ class AlertScreen extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFFFF6B6B),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             child: const Text('Delete All'),
           ),
@@ -124,6 +139,93 @@ class AlertScreen extends StatelessWidget {
     await batch.commit();
   }
 
+  // ── Navigation ─────────────────────────────────────────────────────────────
+
+  Future<void> _handleTap(
+      BuildContext context, String uid, _Alert alert) async {
+    await _markAsRead(uid, alert.id);
+
+    if (!context.mounted) return;
+
+    final taskId = alert.taskId;
+    if (taskId == null) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final taskDoc = await FirebaseFirestore.instance
+          .collection('tasks')
+          .doc(taskId)
+          .get();
+
+      if (!context.mounted) return;
+      Navigator.pop(context); // dismiss loader
+
+      if (!taskDoc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Task no longer exists'),
+            backgroundColor: Colors.grey,
+          ),
+        );
+        return;
+      }
+
+      final task = TaskModel.fromFirestore(taskDoc);
+      final currentUid = FirebaseAuth.instance.currentUser?.uid;
+
+      // ── Builder: task is assigned to them → Home Tasks tab
+      if (task.taskType == 'task' &&
+          task.assignedBuilderIds.contains(currentUid)) {
+        if (!context.mounted) return;
+        homeTabNotifier.value = 1; // switches bottom nav to Home + Tasks tab
+        return;
+      }
+
+      // ── Project owner: fetch parent project → ViewTasksPage
+      if (task.taskType == 'task' && task.parentTaskId != null) {
+        final projectDoc = await FirebaseFirestore.instance
+            .collection('tasks')
+            .doc(task.parentTaskId)
+            .get();
+
+        if (!context.mounted) return;
+
+        if (projectDoc.exists) {
+          final project = TaskModel.fromFirestore(projectDoc);
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ViewTasksPage(project: project),
+            ),
+          );
+        }
+      } else if (task.taskType == 'project') {
+        if (!context.mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ViewTasksPage(project: task),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to open task: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -136,7 +238,8 @@ class AlertScreen extends StatelessWidget {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
-                child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+                child:
+                    CircularProgressIndicator(color: Color(0xFF6C63FF)),
               );
             }
 
@@ -174,17 +277,18 @@ class AlertScreen extends StatelessWidget {
                           if (unread > 0)
                             Text(
                               '$unread unread notifications',
-                              style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                              style: TextStyle(
+                                  fontSize: 13, color: Colors.grey[500]),
                             ),
                         ],
                       ),
-                      // Action buttons row
                       if (alerts.isNotEmpty && uid != null)
                         Row(
                           children: [
                             if (unread > 0)
                               TextButton(
-                                onPressed: () => _markAllRead(uid, alerts),
+                                onPressed: () =>
+                                    _markAllRead(uid, alerts),
                                 child: const Text(
                                   'Mark all read',
                                   style: TextStyle(
@@ -194,8 +298,10 @@ class AlertScreen extends StatelessWidget {
                                 ),
                               ),
                             IconButton(
-                              onPressed: () => _deleteAll(context, uid, alerts),
-                              icon: const Icon(Icons.delete_sweep_outlined),
+                              onPressed: () =>
+                                  _deleteAll(context, uid, alerts),
+                              icon: const Icon(
+                                  Icons.delete_sweep_outlined),
                               color: const Color(0xFFFF6B6B),
                               tooltip: 'Clear all',
                             ),
@@ -216,13 +322,16 @@ class AlertScreen extends StatelessWidget {
                               const SizedBox(height: 12),
                               Text(
                                 'No notifications yet',
-                                style: TextStyle(color: Colors.grey[400], fontSize: 15),
+                                style: TextStyle(
+                                    color: Colors.grey[400],
+                                    fontSize: 15),
                               ),
                             ],
                           ),
                         )
                       : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20),
                           itemCount: alerts.length,
                           itemBuilder: (context, index) {
                             final alert = alerts[index];
@@ -230,23 +339,30 @@ class AlertScreen extends StatelessWidget {
                               key: Key(alert.id),
                               direction: DismissDirection.endToStart,
                               onDismissed: (_) {
-                                if (uid != null) _deleteAlert(uid, alert.id);
+                                if (uid != null)
+                                  _deleteAlert(uid, alert.id);
                               },
                               background: Container(
-                                margin: const EdgeInsets.only(bottom: 10),
-                                padding: const EdgeInsets.only(right: 20),
+                                margin:
+                                    const EdgeInsets.only(bottom: 10),
+                                padding:
+                                    const EdgeInsets.only(right: 20),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFFFF6B6B),
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius:
+                                      BorderRadius.circular(16),
                                 ),
                                 alignment: Alignment.centerRight,
-                                child: const Icon(Icons.delete_outline,
-                                    color: Colors.white, size: 24),
+                                child: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.white,
+                                    size: 24),
                               ),
                               child: _AlertCard(
                                 alert: alert,
                                 onTap: uid != null
-                                    ? () => _markAsRead(uid, alert.id)
+                                    ? () => _handleTap(
+                                        context, uid, alert)
                                     : null,
                               ),
                             );
@@ -273,6 +389,7 @@ class _Alert {
   final String time;
   final AlertType type;
   final bool isRead;
+  final String? taskId;
 
   const _Alert({
     required this.id,
@@ -281,6 +398,7 @@ class _Alert {
     required this.time,
     required this.type,
     required this.isRead,
+    this.taskId,
   });
 }
 
@@ -289,31 +407,46 @@ class _Alert {
 extension _AlertTypeExtension on AlertType {
   Color get color {
     switch (this) {
-      case AlertType.warning: return const Color(0xFFFFB347);
-      case AlertType.error: return const Color(0xFFFF6B6B);
-      case AlertType.success: return const Color(0xFF43C59E);
-      case AlertType.info: return const Color(0xFF6C63FF);
-      case AlertType.security: return const Color(0xFFE056A0);
+      case AlertType.warning:
+        return const Color(0xFFFFB347);
+      case AlertType.error:
+        return const Color(0xFFFF6B6B);
+      case AlertType.success:
+        return const Color(0xFF43C59E);
+      case AlertType.info:
+        return const Color(0xFF6C63FF);
+      case AlertType.security:
+        return const Color(0xFFE056A0);
     }
   }
 
   IconData get icon {
     switch (this) {
-      case AlertType.warning: return Icons.warning_amber_outlined;
-      case AlertType.error: return Icons.error_outline;
-      case AlertType.success: return Icons.check_circle_outline;
-      case AlertType.info: return Icons.info_outline;
-      case AlertType.security: return Icons.security_outlined;
+      case AlertType.warning:
+        return Icons.warning_amber_outlined;
+      case AlertType.error:
+        return Icons.error_outline;
+      case AlertType.success:
+        return Icons.check_circle_outline;
+      case AlertType.info:
+        return Icons.info_outline;
+      case AlertType.security:
+        return Icons.security_outlined;
     }
   }
 
   String get label {
     switch (this) {
-      case AlertType.warning: return 'Warning';
-      case AlertType.error: return 'Error';
-      case AlertType.success: return 'Success';
-      case AlertType.info: return 'Info';
-      case AlertType.security: return 'Security';
+      case AlertType.warning:
+        return 'Warning';
+      case AlertType.error:
+        return 'Error';
+      case AlertType.success:
+        return 'Success';
+      case AlertType.info:
+        return 'Info';
+      case AlertType.security:
+        return 'Security';
     }
   }
 }
@@ -329,6 +462,7 @@ class _AlertCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = alert.type.color;
+    final hasNavigation = alert.taskId != null;
 
     return GestureDetector(
       onTap: onTap,
@@ -371,7 +505,9 @@ class _AlertCard extends StatelessWidget {
                         child: Text(
                           alert.title,
                           style: TextStyle(
-                            fontWeight: alert.isRead ? FontWeight.w600 : FontWeight.bold,
+                            fontWeight: alert.isRead
+                                ? FontWeight.w600
+                                : FontWeight.bold,
                             fontSize: 14,
                             color: const Color(0xFF1A1A2E),
                           ),
@@ -391,13 +527,17 @@ class _AlertCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     alert.description,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600], height: 1.4),
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        height: 1.4),
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
@@ -414,8 +554,25 @@ class _AlertCard extends StatelessWidget {
                       const SizedBox(width: 8),
                       Text(
                         alert.time,
-                        style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey[400]),
                       ),
+                      const Spacer(),
+                      if (hasNavigation)
+                        Row(
+                          children: [
+                            Text(
+                              'View task',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: color,
+                                  fontWeight: FontWeight.w500),
+                            ),
+                            const SizedBox(width: 2),
+                            Icon(Icons.chevron_right,
+                                size: 14, color: color),
+                          ],
+                        ),
                     ],
                   ),
                 ],

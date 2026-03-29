@@ -147,6 +147,7 @@ async function notifyRecipients(recipientIds, title, body, taskId) {
           description: body,
           type: "info",
           isRead: false,
+          taskId: taskId,  // ← added
           createdAt: new Date(),
         });
       console.log("✅ Alert written for:", recipientId);

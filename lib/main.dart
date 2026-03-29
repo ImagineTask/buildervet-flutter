@@ -12,6 +12,9 @@ import 'features/auth/auth_screen.dart';
 import 'features/Home/state/project_selection_state.dart';
 import 'features/Home/services/notification_service.dart';
 
+// Global notifier to switch Home tab from anywhere
+final homeTabNotifier = ValueNotifier<int>(0);
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -31,7 +34,8 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'SF Pro Display',
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6C63FF)),
+        colorScheme:
+            ColorScheme.fromSeed(seedColor: const Color(0xFF6C63FF)),
         useMaterial3: true,
       ),
       home: const AuthGate(),
@@ -53,7 +57,8 @@ class AuthGate extends StatelessWidget {
           return const Scaffold(
             backgroundColor: Color(0xFFF5F7FA),
             body: Center(
-              child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+              child:
+                  CircularProgressIndicator(color: Color(0xFF6C63FF)),
             ),
           );
         }
@@ -88,6 +93,23 @@ class _MainNavigationState extends State<MainNavigation> {
     AlertScreen(),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    homeTabNotifier.addListener(_onHomeTabChanged);
+  }
+
+  @override
+  void dispose() {
+    homeTabNotifier.removeListener(_onHomeTabChanged);
+    super.dispose();
+  }
+
+  void _onHomeTabChanged() {
+    // Switch bottom nav to Home (index 0)
+    setState(() => _currentIndex = 0);
+  }
+
   Stream<int> _unreadAlertCount() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const Stream.empty();
@@ -120,7 +142,8 @@ class _MainNavigationState extends State<MainNavigation> {
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: StreamBuilder<int>(
               stream: _unreadAlertCount(),
               builder: (context, snapshot) {
@@ -128,11 +151,43 @@ class _MainNavigationState extends State<MainNavigation> {
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _NavItem(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: 'Home', index: 0, currentIndex: _currentIndex, onTap: _onTap),
-                    _NavItem(icon: Icons.people_outline, activeIcon: Icons.people_rounded, label: 'Network', index: 1, currentIndex: _currentIndex, onTap: _onTap),
-                    _NavItem(icon: Icons.calendar_today_outlined, activeIcon: Icons.calendar_today_rounded, label: 'Calendar', index: 2, currentIndex: _currentIndex, onTap: _onTap),
-                    _NavItem(icon: Icons.chat_bubble_outline, activeIcon: Icons.chat_bubble_rounded, label: 'Chat', index: 3, currentIndex: _currentIndex, onTap: _onTap, badge: 11),
-                    _NavItem(icon: Icons.notifications_outlined, activeIcon: Icons.notifications_rounded, label: 'Alert', index: 4, currentIndex: _currentIndex, onTap: _onTap, badge: alertBadge),
+                    _NavItem(
+                        icon: Icons.home_outlined,
+                        activeIcon: Icons.home_rounded,
+                        label: 'Home',
+                        index: 0,
+                        currentIndex: _currentIndex,
+                        onTap: _onTap),
+                    _NavItem(
+                        icon: Icons.people_outline,
+                        activeIcon: Icons.people_rounded,
+                        label: 'Network',
+                        index: 1,
+                        currentIndex: _currentIndex,
+                        onTap: _onTap),
+                    _NavItem(
+                        icon: Icons.calendar_today_outlined,
+                        activeIcon: Icons.calendar_today_rounded,
+                        label: 'Calendar',
+                        index: 2,
+                        currentIndex: _currentIndex,
+                        onTap: _onTap),
+                    _NavItem(
+                        icon: Icons.chat_bubble_outline,
+                        activeIcon: Icons.chat_bubble_rounded,
+                        label: 'Chat',
+                        index: 3,
+                        currentIndex: _currentIndex,
+                        onTap: _onTap,
+                        badge: 11),
+                    _NavItem(
+                        icon: Icons.notifications_outlined,
+                        activeIcon: Icons.notifications_rounded,
+                        label: 'Alert',
+                        index: 4,
+                        currentIndex: _currentIndex,
+                        onTap: _onTap,
+                        badge: alertBadge),
                   ],
                 );
               },
@@ -177,9 +232,11 @@ class _NavItem extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: EdgeInsets.symmetric(horizontal: isActive ? 16 : 12, vertical: 8),
+        padding: EdgeInsets.symmetric(
+            horizontal: isActive ? 16 : 12, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
+          color:
+              isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -201,13 +258,20 @@ class _NavItem extends StatelessWidget {
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFF6B6B),
-                        shape: badge > 9 ? BoxShape.rectangle : BoxShape.circle,
-                        borderRadius: badge > 9 ? BorderRadius.circular(6) : null,
+                        shape: badge > 9
+                            ? BoxShape.rectangle
+                            : BoxShape.circle,
+                        borderRadius:
+                            badge > 9 ? BorderRadius.circular(6) : null,
                       ),
-                      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                      constraints: const BoxConstraints(
+                          minWidth: 14, minHeight: 14),
                       child: Text(
                         badge > 99 ? '99+' : '$badge',
-                        style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -216,7 +280,11 @@ class _NavItem extends StatelessWidget {
             ),
             if (isActive) ...[
               const SizedBox(width: 6),
-              Text(label, style: const TextStyle(color: activeColor, fontSize: 13, fontWeight: FontWeight.w600)),
+              Text(label,
+                  style: const TextStyle(
+                      color: activeColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
             ],
           ],
         ),
