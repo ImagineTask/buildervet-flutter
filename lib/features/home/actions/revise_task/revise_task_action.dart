@@ -83,10 +83,11 @@ class _ReviseSheetState extends State<_ReviseSheet> {
   void initState() {
     super.initState();
     if (widget.task.guidePrice > 0) {
-      _requestedFeeController.text = widget.task.guidePrice.toStringAsFixed(0);
+      _requestedFeeController.text =
+          widget.task.guidePrice.toStringAsFixed(0);
     }
-    // Pre-fill existing scheduled dates
-    final savedDates = List<dynamic>.from(widget.task.metadata['scheduledDates'] ?? []);
+    final savedDates =
+        List<dynamic>.from(widget.task.metadata['scheduledDates'] ?? []);
     _selectedDates = savedDates
         .map((d) => DateTime.tryParse(d.toString()))
         .whereType<DateTime>()
@@ -116,13 +117,11 @@ class _ReviseSheetState extends State<_ReviseSheet> {
 
       final ranges = <DateTimeRange>[];
       for (final doc in snap.docs) {
-        // Skip current task
         if (doc.id == widget.task.id) continue;
-
         final d = doc.data();
         final metadata = Map<String, dynamic>.from(d['metadata'] ?? {});
-        final savedDates = List<dynamic>.from(metadata['scheduledDates'] ?? []);
-
+        final savedDates =
+            List<dynamic>.from(metadata['scheduledDates'] ?? []);
         for (final dateStr in savedDates) {
           final date = DateTime.tryParse(dateStr.toString());
           if (date != null) {
@@ -134,7 +133,6 @@ class _ReviseSheetState extends State<_ReviseSheet> {
           }
         }
       }
-
       setState(() {
         _occupiedRanges = ranges;
         _isLoadingOccupied = false;
@@ -192,7 +190,8 @@ class _ReviseSheetState extends State<_ReviseSheet> {
       _showSnack('Please select at least one working date');
       return;
     }
-    if (_selectedReason == 'Other' && _reasonController.text.trim().isEmpty) {
+    if (_selectedReason == 'Other' &&
+        _reasonController.text.trim().isEmpty) {
       _showSnack('Please describe your reason');
       return;
     }
@@ -203,7 +202,8 @@ class _ReviseSheetState extends State<_ReviseSheet> {
       final currentUser = FirebaseAuth.instance.currentUser;
       final firestore = FirebaseFirestore.instance;
       final taskRef = firestore.collection('tasks').doc(widget.task.id);
-      final requestedFee = double.tryParse(_requestedFeeController.text.trim()) ?? 0;
+      final requestedFee =
+          double.tryParse(_requestedFeeController.text.trim()) ?? 0;
       final reason = _selectedReason == 'Other'
           ? _reasonController.text.trim()
           : _selectedReason!;
@@ -212,7 +212,6 @@ class _ReviseSheetState extends State<_ReviseSheet> {
 
       final batch = firestore.batch();
 
-      // Build update map
       final Map<String, dynamic> updates = {
         'status': 'revising',
         'updatedAt': now,
@@ -232,11 +231,11 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                 .toList(),
             'currentStartTime': widget.task.startTime.toIso8601String(),
             'currentEndTime': widget.task.endTime.toIso8601String(),
+            'currentDurationDays': widget.task.durationDays,
           },
         },
       };
 
-      // If revising deadline, update task dates
       if (_reviseDeadline && _selectedDates.isNotEmpty) {
         final sortedDates = _selectedDates.toList()..sort();
         updates['metadata.scheduledDates'] =
@@ -246,14 +245,12 @@ class _ReviseSheetState extends State<_ReviseSheet> {
         updates['durationDays'] = _selectedDates.length;
       }
 
-      // If revising fee, update guidePrice
       if (_reviseFee) {
         updates['guidePrice'] = requestedFee;
       }
 
       batch.update(taskRef, updates);
 
-      // Write event to subcollection
       final eventRef = taskRef.collection('events').doc(eventId);
       batch.set(eventRef, {
         'id': eventId,
@@ -276,6 +273,7 @@ class _ReviseSheetState extends State<_ReviseSheet> {
             'requestedDates': _selectedDates
                 .map((d) => d.toIso8601String())
                 .toList(),
+            'currentDurationDays': widget.task.durationDays,
           },
         },
       });
@@ -344,14 +342,16 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFF4ECDC4).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.edit_note_outlined, size: 14, color: Color(0xFF4ECDC4)),
+                        Icon(Icons.edit_note_outlined,
+                            size: 14, color: Color(0xFF4ECDC4)),
                         SizedBox(width: 4),
                         Text(
                           'Revising',
@@ -386,7 +386,7 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
 
-                    // ── What to revise ──────────────────────────────
+                    // ── What to revise ────────────────────────────────
                     _label('What would you like to revise?'),
                     const SizedBox(height: 10),
                     Row(
@@ -396,7 +396,8 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                             icon: Icons.currency_pound,
                             label: 'Fee',
                             selected: _reviseFee,
-                            onTap: () => setState(() => _reviseFee = !_reviseFee),
+                            onTap: () =>
+                                setState(() => _reviseFee = !_reviseFee),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -406,8 +407,10 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                             label: 'Deadline',
                             selected: _reviseDeadline,
                             onTap: () async {
-                              setState(() => _reviseDeadline = !_reviseDeadline);
-                              if (_reviseDeadline && _occupiedRanges.isEmpty) {
+                              setState(
+                                  () => _reviseDeadline = !_reviseDeadline);
+                              if (_reviseDeadline &&
+                                  _occupiedRanges.isEmpty) {
                                 await _loadOccupiedRanges();
                               }
                             },
@@ -417,7 +420,7 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                     ),
                     const SizedBox(height: 24),
 
-                    // ── Fee section ─────────────────────────────────
+                    // ── Fee section ───────────────────────────────────
                     if (_reviseFee) ...[
                       _label('Requested Fee'),
                       const SizedBox(height: 8),
@@ -434,11 +437,15 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                             Expanded(
                               child: _feeInfoItem(
                                 label: 'Current Fee',
-                                value: '£${widget.task.guidePrice.toStringAsFixed(0)}',
+                                value:
+                                    '£${widget.task.guidePrice.toStringAsFixed(0)}',
                                 color: const Color(0xFF1A1A2E),
                               ),
                             ),
-                            Container(width: 1, height: 36, color: Colors.grey[300]),
+                            Container(
+                                width: 1,
+                                height: 36,
+                                color: Colors.grey[300]),
                             Expanded(
                               child: _feeInfoItem(
                                 label: 'Guide Range',
@@ -455,27 +462,32 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                         keyboardType: TextInputType.number,
                         decoration: InputDecoration(
                           hintText: 'Enter requested fee',
-                          prefixIcon: const Icon(Icons.currency_pound, color: Color(0xFF4ECDC4)),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          prefixIcon: const Icon(Icons.currency_pound,
+                              color: Color(0xFF4ECDC4)),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFF4ECDC4), width: 2),
+                            borderSide: const BorderSide(
+                                color: Color(0xFF4ECDC4), width: 2),
                           ),
                         ),
                       ),
                       const SizedBox(height: 24),
                     ],
 
-                    // ── Deadline section ────────────────────────────
+                    // ── Deadline section ──────────────────────────────
                     if (_reviseDeadline) ...[
                       _label('Requested Working Dates'),
                       const SizedBox(height: 4),
                       Text(
                         'Tap dates to select your preferred working days',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey[500]),
                       ),
                       const SizedBox(height: 12),
-                      // Current dates info
+
+                      // Current schedule + duration reference
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
@@ -486,32 +498,90 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.calendar_today_outlined,
-                                size: 14, color: Colors.grey),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Current: ${_formatDate(widget.task.startTime)} – ${_formatDate(widget.task.endTime)}',
-                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Current Schedule',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey[500]),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '${_formatDate(widget.task.startTime)} – ${_formatDate(widget.task.endTime)}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF1A1A2E),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                                width: 1,
+                                height: 36,
+                                color: Colors.grey[300]),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Duration',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.grey[500]),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                          Icons.calendar_today_outlined,
+                                          size: 12,
+                                          color: Color(0xFF4ECDC4)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${widget.task.durationDays} day${widget.task.durationDays > 1 ? 's' : ''}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF1A1A2E),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
+
                       // Legend
                       Row(
                         children: [
-                          _legendItem(const Color(0xFF4ECDC4), 'Selected'),
+                          _legendItem(
+                              const Color(0xFF4ECDC4), 'Selected'),
                           const SizedBox(width: 16),
                           _legendItem(Colors.grey.shade400, 'Occupied'),
                           const SizedBox(width: 16),
-                          _legendItem(Colors.grey.shade200, 'Unavailable'),
+                          _legendItem(
+                              Colors.grey.shade200, 'Unavailable'),
                         ],
                       ),
                       const SizedBox(height: 12),
+
                       if (_isLoadingOccupied)
                         const Center(
                           child: Padding(
                             padding: EdgeInsets.all(20),
-                            child: CircularProgressIndicator(color: Color(0xFF4ECDC4)),
+                            child: CircularProgressIndicator(
+                                color: Color(0xFF4ECDC4)),
                           ),
                         )
                       else
@@ -520,40 +590,138 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                           isOccupied: _isOccupied,
                           onDayTap: _toggleDate,
                         ),
+
+                      // Selected days summary with comparison
                       if (_selectedDates.isNotEmpty) ...[
                         const SizedBox(height: 12),
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4ECDC4).withOpacity(0.08),
+                            color: const Color(0xFF4ECDC4)
+                                .withOpacity(0.08),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    '${_selectedDates.length} working day${_selectedDates.length > 1 ? 's' : ''} selected',
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Color(0xFF4ECDC4),
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      // Selected days
+                                      Row(
+                                        children: [
+                                          const Icon(
+                                              Icons.check_circle_outline,
+                                              size: 13,
+                                              color: Color(0xFF4ECDC4)),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${_selectedDates.length} day${_selectedDates.length > 1 ? 's' : ''} selected',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              color: Color(0xFF4ECDC4),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      // Expected days + badge
+                                      Row(
+                                        children: [
+                                          Icon(
+                                              Icons
+                                                  .calendar_today_outlined,
+                                              size: 13,
+                                              color: Colors.grey[400]),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '${widget.task.durationDays} day${widget.task.durationDays > 1 ? 's' : ''} expected',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[500],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 7,
+                                                    vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: _selectedDates
+                                                          .length ==
+                                                      widget.task
+                                                          .durationDays
+                                                  ? Colors.grey
+                                                      .withOpacity(0.1)
+                                                  : _selectedDates.length >
+                                                          widget.task
+                                                              .durationDays
+                                                      ? const Color(
+                                                              0xFFFFB347)
+                                                          .withOpacity(0.15)
+                                                      : const Color(
+                                                              0xFF6C63FF)
+                                                          .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              _selectedDates.length ==
+                                                      widget.task
+                                                          .durationDays
+                                                  ? 'same as expected'
+                                                  : _selectedDates.length >
+                                                          widget.task
+                                                              .durationDays
+                                                      ? '+${_selectedDates.length - widget.task.durationDays} more'
+                                                      : '-${widget.task.durationDays - _selectedDates.length} less',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                                color: _selectedDates
+                                                            .length ==
+                                                        widget.task
+                                                            .durationDays
+                                                    ? Colors.grey
+                                                    : _selectedDates
+                                                                .length >
+                                                            widget.task
+                                                                .durationDays
+                                                        ? const Color(
+                                                            0xFFFFB347)
+                                                        : const Color(
+                                                            0xFF6C63FF),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ),
                                   GestureDetector(
-                                    onTap: () => setState(() => _selectedDates.clear()),
+                                    onTap: () => setState(
+                                        () => _selectedDates.clear()),
                                     child: const Text('Clear',
-                                        style: TextStyle(fontSize: 12, color: Colors.red)),
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.red)),
                                   ),
                                 ],
                               ),
-                              if (_startDate != null && _endDate != null) ...[
-                                const SizedBox(height: 4),
+                              if (_startDate != null &&
+                                  _endDate != null) ...[
+                                const SizedBox(height: 6),
                                 Text(
                                   'From ${_formatDate(_startDate!)} to ${_formatDate(_endDate!)}',
-                                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.grey),
                                 ),
                               ],
                             ],
@@ -563,24 +731,28 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                       const SizedBox(height: 24),
                     ],
 
-                    // ── Reason selector ─────────────────────────────
+                    // ── Reason selector ───────────────────────────────
                     _label('Reason for Revision'),
                     const SizedBox(height: 10),
                     ...(_reasonOptions.map((reason) {
                       final isSelected = _selectedReason == reason;
                       return GestureDetector(
-                        onTap: () => setState(() => _selectedReason = reason),
+                        onTap: () =>
+                            setState(() => _selectedReason = reason),
                         child: Container(
                           width: double.infinity,
                           margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? const Color(0xFF4ECDC4).withOpacity(0.08)
                                 : Colors.grey.shade50,
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(
-                              color: isSelected ? const Color(0xFF4ECDC4) : Colors.grey.shade200,
+                              color: isSelected
+                                  ? const Color(0xFF4ECDC4)
+                                  : Colors.grey.shade200,
                               width: isSelected ? 1.5 : 1,
                             ),
                           ),
@@ -590,7 +762,9 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                                 isSelected
                                     ? Icons.check_circle_rounded
                                     : Icons.radio_button_unchecked,
-                                color: isSelected ? const Color(0xFF4ECDC4) : Colors.grey[400],
+                                color: isSelected
+                                    ? const Color(0xFF4ECDC4)
+                                    : Colors.grey[400],
                                 size: 20,
                               ),
                               const SizedBox(width: 10),
@@ -599,8 +773,12 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                                   reason,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: isSelected ? const Color(0xFF1A1A2E) : Colors.grey[600],
-                                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                                    color: isSelected
+                                        ? const Color(0xFF1A1A2E)
+                                        : Colors.grey[600],
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
                                   ),
                                 ),
                               ),
@@ -619,10 +797,12 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                         decoration: InputDecoration(
                           hintText: 'Describe your reason...',
                           hintStyle: TextStyle(color: Colors.grey[400]),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: Color(0xFF4ECDC4), width: 2),
+                            borderSide: const BorderSide(
+                                color: Color(0xFF4ECDC4), width: 2),
                           ),
                         ),
                       ),
@@ -637,18 +817,23 @@ class _ReviseSheetState extends State<_ReviseSheet> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF4ECDC4),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
                         ),
                         child: _isSaving
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                    color: Colors.white, strokeWidth: 2),
                               )
                             : const Text(
                                 'Send Revision Request',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold),
                               ),
                       ),
                     ),
@@ -673,25 +858,33 @@ class _ReviseSheetState extends State<_ReviseSheet> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFF4ECDC4).withOpacity(0.08) : Colors.grey.shade50,
+          color: selected
+              ? const Color(0xFF4ECDC4).withOpacity(0.08)
+              : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected ? const Color(0xFF4ECDC4) : Colors.grey.shade200,
+            color:
+                selected ? const Color(0xFF4ECDC4) : Colors.grey.shade200,
             width: selected ? 1.5 : 1,
           ),
         ),
         child: Column(
           children: [
             Icon(icon,
-                color: selected ? const Color(0xFF4ECDC4) : Colors.grey[400],
+                color: selected
+                    ? const Color(0xFF4ECDC4)
+                    : Colors.grey[400],
                 size: 22),
             const SizedBox(height: 6),
             Text(
               label,
               style: TextStyle(
                 fontSize: 13,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                color: selected ? const Color(0xFF4ECDC4) : Colors.grey[500],
+                fontWeight:
+                    selected ? FontWeight.w600 : FontWeight.normal,
+                color: selected
+                    ? const Color(0xFF4ECDC4)
+                    : Colors.grey[500],
               ),
             ),
           ],
@@ -706,10 +899,12 @@ class _ReviseSheetState extends State<_ReviseSheet> {
         Container(
           width: 12,
           height: 12,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          decoration:
+              BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        Text(label,
+            style: const TextStyle(fontSize: 11, color: Colors.grey)),
       ],
     );
   }
@@ -730,17 +925,20 @@ class _ReviseSheetState extends State<_ReviseSheet> {
   }) {
     return Column(
       children: [
-        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+        Text(label,
+            style: TextStyle(fontSize: 11, color: Colors.grey[500])),
         const SizedBox(height: 4),
         Text(
           value,
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color),
+          style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.bold, color: color),
         ),
       ],
     );
   }
 
-  String _formatDate(DateTime date) => '${date.day}/${date.month}/${date.year}';
+  String _formatDate(DateTime date) =>
+      '${date.day}/${date.month}/${date.year}';
 }
 
 // ─────────────────────────────────────────────
@@ -781,8 +979,8 @@ class _ReviseCalendarState extends State<_ReviseCalendar> {
 
   @override
   Widget build(BuildContext context) {
-    final daysInMonth =
-        DateUtils.getDaysInMonth(_focusedMonth.year, _focusedMonth.month);
+    final daysInMonth = DateUtils.getDaysInMonth(
+        _focusedMonth.year, _focusedMonth.month);
     final firstWeekday =
         DateTime(_focusedMonth.year, _focusedMonth.month, 1).weekday % 7;
     final today = DateTime.now();
@@ -795,7 +993,8 @@ class _ReviseCalendarState extends State<_ReviseCalendar> {
             IconButton(
               onPressed: () => setState(() => _focusedMonth =
                   DateTime(_focusedMonth.year, _focusedMonth.month - 1)),
-              icon: const Icon(Icons.chevron_left, color: Color(0xFF4ECDC4)),
+              icon: const Icon(Icons.chevron_left,
+                  color: Color(0xFF4ECDC4)),
             ),
             Text(_monthLabel(_focusedMonth),
                 style: const TextStyle(
@@ -805,7 +1004,8 @@ class _ReviseCalendarState extends State<_ReviseCalendar> {
             IconButton(
               onPressed: () => setState(() => _focusedMonth =
                   DateTime(_focusedMonth.year, _focusedMonth.month + 1)),
-              icon: const Icon(Icons.chevron_right, color: Color(0xFF4ECDC4)),
+              icon: const Icon(Icons.chevron_right,
+                  color: Color(0xFF4ECDC4)),
             ),
           ],
         ),
@@ -838,7 +1038,8 @@ class _ReviseCalendarState extends State<_ReviseCalendar> {
             final normalized = DateTime(day.year, day.month, day.day);
             final isSelected = widget.selectedDates.contains(normalized);
             final isOccupied = widget.isOccupied(normalized);
-            final isPast = day.isBefore(DateTime(today.year, today.month, today.day));
+            final isPast = day.isBefore(
+                DateTime(today.year, today.month, today.day));
             final isToday = DateUtils.isSameDay(day, today);
             final isDisabled = isOccupied || isPast;
 
@@ -856,14 +1057,16 @@ class _ReviseCalendarState extends State<_ReviseCalendar> {
             }
 
             return GestureDetector(
-              onTap: isDisabled ? null : () => widget.onDayTap(normalized),
+              onTap:
+                  isDisabled ? null : () => widget.onDayTap(normalized),
               child: Container(
                 margin: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
                   color: bgColor,
                   shape: BoxShape.circle,
                   border: isToday && !isSelected && !isOccupied
-                      ? Border.all(color: const Color(0xFF4ECDC4), width: 1.5)
+                      ? Border.all(
+                          color: const Color(0xFF4ECDC4), width: 1.5)
                       : null,
                 ),
                 child: Center(

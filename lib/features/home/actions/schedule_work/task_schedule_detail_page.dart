@@ -243,7 +243,8 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                                         backgroundColor: user.avatarColor,
                                         backgroundImage:
                                             user.avatarUrl != null
-                                                ? NetworkImage(user.avatarUrl!)
+                                                ? NetworkImage(
+                                                    user.avatarUrl!)
                                                 : null,
                                         child: user.avatarUrl == null
                                             ? Text(user.initials,
@@ -253,11 +254,13 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                                             : null,
                                       ),
                                       label: Text(user.name),
-                                      deleteIcon:
-                                          const Icon(Icons.close, size: 14),
+                                      deleteIcon: const Icon(
+                                          Icons.close,
+                                          size: 14),
                                       onDeleted: () {
                                         setState(() {
-                                          selectedBuilderIds.remove(user.uid);
+                                          selectedBuilderIds
+                                              .remove(user.uid);
                                           occupiedRanges.remove(user.uid);
                                           selectedDates.clear();
                                         });
@@ -276,7 +279,8 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                               backgroundColor: Colors.transparent,
                               builder: (_) => BuilderSelectionSheet(
                                 allContacts: allContacts,
-                                selectedIds: List.from(selectedBuilderIds),
+                                selectedIds:
+                                    List.from(selectedBuilderIds),
                               ),
                             );
                             if (result != null) {
@@ -287,16 +291,19 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                               if (result.isNotEmpty) {
                                 final ranges =
                                     await _fetchOccupiedRanges(result);
-                                setState(() => occupiedRanges = ranges);
+                                setState(
+                                    () => occupiedRanges = ranges);
                               }
                             }
                           },
                           child: Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 12),
                             decoration: BoxDecoration(
                               border: Border.all(
-                                  color: const Color(0xFF6C63FF), width: 1.5),
+                                  color: const Color(0xFF6C63FF),
+                                  width: 1.5),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: const Row(
@@ -336,7 +343,8 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                             decoration: BoxDecoration(
                               color: Colors.grey.shade50,
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: Colors.grey.shade200),
+                              border:
+                                  Border.all(color: Colors.grey.shade200),
                             ),
                             child: Row(
                               children: [
@@ -385,19 +393,119 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Text(
-                                        '${selectedDates.length} working day${selectedDates.length > 1 ? 's' : ''} selected',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: Color(0xFF6C63FF),
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                      Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // Selected days
+                                          Row(
+                                            children: [
+                                              const Icon(
+                                                  Icons
+                                                      .check_circle_outline,
+                                                  size: 13,
+                                                  color:
+                                                      Color(0xFF6C63FF)),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '${selectedDates.length} day${selectedDates.length > 1 ? 's' : ''} selected',
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  color: Color(0xFF6C63FF),
+                                                  fontWeight:
+                                                      FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 4),
+                                          // Expected days + badge
+                                          Row(
+                                            children: [
+                                              Icon(
+                                                  Icons
+                                                      .calendar_today_outlined,
+                                                  size: 13,
+                                                  color: Colors.grey[400]),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '${widget.task.durationDays} day${widget.task.durationDays > 1 ? 's' : ''} expected',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.grey[500],
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding: const EdgeInsets
+                                                    .symmetric(
+                                                    horizontal: 7,
+                                                    vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: selectedDates
+                                                              .length ==
+                                                          widget.task
+                                                              .durationDays
+                                                      ? Colors.grey
+                                                          .withOpacity(0.1)
+                                                      : selectedDates
+                                                                  .length >
+                                                              widget.task
+                                                                  .durationDays
+                                                          ? const Color(
+                                                                  0xFFFFB347)
+                                                              .withOpacity(
+                                                                  0.15)
+                                                          : const Color(
+                                                                  0xFF6C63FF)
+                                                              .withOpacity(
+                                                                  0.1),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                          20),
+                                                ),
+                                                child: Text(
+                                                  selectedDates.length ==
+                                                          widget.task
+                                                              .durationDays
+                                                      ? 'same as expected'
+                                                      : selectedDates
+                                                                  .length >
+                                                              widget.task
+                                                                  .durationDays
+                                                          ? '+${selectedDates.length - widget.task.durationDays} more'
+                                                          : '-${widget.task.durationDays - selectedDates.length} less',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight:
+                                                        FontWeight.w600,
+                                                    color: selectedDates
+                                                                .length ==
+                                                            widget.task
+                                                                .durationDays
+                                                        ? Colors.grey
+                                                        : selectedDates
+                                                                    .length >
+                                                                widget
+                                                                    .task
+                                                                    .durationDays
+                                                            ? const Color(
+                                                                0xFFFFB347)
+                                                            : const Color(
+                                                                0xFF6C63FF),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                       GestureDetector(
                                         onTap: () => setState(
@@ -411,11 +519,12 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                                   ),
                                   if (_startDate != null &&
                                       _endDate != null) ...[
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 6),
                                     Text(
                                       'From ${_formatDate(_startDate!)} to ${_formatDate(_endDate!)}',
                                       style: const TextStyle(
-                                          fontSize: 12, color: Colors.grey),
+                                          fontSize: 12,
+                                          color: Colors.grey),
                                     ),
                                   ],
                                 ],
@@ -478,7 +587,8 @@ class _TaskScheduleDetailPageState extends State<TaskScheduleDetailPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF6C63FF),
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12)),
                       ),
@@ -614,7 +724,8 @@ class _InlineCalendarState extends State<_InlineCalendar> {
             IconButton(
               onPressed: () => setState(() => _focusedMonth =
                   DateTime(_focusedMonth.year, _focusedMonth.month - 1)),
-              icon: const Icon(Icons.chevron_left, color: Color(0xFF6C63FF)),
+              icon: const Icon(Icons.chevron_left,
+                  color: Color(0xFF6C63FF)),
             ),
             Text(_monthLabel(_focusedMonth),
                 style: const TextStyle(
@@ -624,7 +735,8 @@ class _InlineCalendarState extends State<_InlineCalendar> {
             IconButton(
               onPressed: () => setState(() => _focusedMonth =
                   DateTime(_focusedMonth.year, _focusedMonth.month + 1)),
-              icon: const Icon(Icons.chevron_right, color: Color(0xFF6C63FF)),
+              icon: const Icon(Icons.chevron_right,
+                  color: Color(0xFF6C63FF)),
             ),
           ],
         ),
@@ -676,7 +788,8 @@ class _InlineCalendarState extends State<_InlineCalendar> {
             }
 
             return GestureDetector(
-              onTap: isDisabled ? null : () => widget.onDayTap(normalized),
+              onTap:
+                  isDisabled ? null : () => widget.onDayTap(normalized),
               child: Container(
                 margin: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
@@ -722,7 +835,8 @@ class BuilderSelectionSheet extends StatefulWidget {
   });
 
   @override
-  State<BuilderSelectionSheet> createState() => _BuilderSelectionSheetState();
+  State<BuilderSelectionSheet> createState() =>
+      _BuilderSelectionSheetState();
 }
 
 class _BuilderSelectionSheetState extends State<BuilderSelectionSheet> {
