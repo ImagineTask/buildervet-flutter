@@ -190,8 +190,7 @@ class _QuoteCardState extends State<QuoteCard> {
                     color: const Color(0xFFFF6B6B).withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                        color:
-                            const Color(0xFFFF6B6B).withValues(alpha: 0.3)),
+                        color: const Color(0xFFFF6B6B).withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -226,8 +225,7 @@ class _QuoteCardState extends State<QuoteCard> {
                     color: const Color(0xFFFFB347).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                        color: const Color(0xFFFFB347)
-                            .withValues(alpha: 0.4)),
+                        color: const Color(0xFFFFB347).withValues(alpha: 0.4)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -262,8 +260,7 @@ class _QuoteCardState extends State<QuoteCard> {
                               child: Text(
                                 quote.updateReason!,
                                 style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[600]),
+                                    fontSize: 12, color: Colors.grey[600]),
                               ),
                             ),
                           ],
@@ -320,7 +317,7 @@ class _QuoteCardState extends State<QuoteCard> {
                 _HomeownerActions(
                   tasks: tasks,
                   quote: quote,
-                  projectId: projectId, // ← pass projectId down
+                  projectId: projectId,
                 ),
             ],
           ),
@@ -338,7 +335,7 @@ class _QuoteCardState extends State<QuoteCard> {
 class _HomeownerActions extends StatefulWidget {
   final List<TaskItem> tasks;
   final ProjectQuote quote;
-  final String projectId; // ← new
+  final String projectId;
 
   const _HomeownerActions({
     required this.tasks,
@@ -366,7 +363,6 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
       actorName = (userDoc.data()?['name'] as String?) ?? 'Homeowner';
     }
 
-    // Project-level history entry — total is sum across ALL tasks
     final projectHistoryEntry = <String, dynamic>{
       'type': status == 'accepted' ? 'approved' : 'declined',
       'material': widget.quote.totalMaterial,
@@ -378,7 +374,6 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
         'note': declineMessage,
     };
 
-    // Task-level history entry (per task)
     final taskHistoryEntry = <String, dynamic>{
       'type': status == 'accepted' ? 'approved' : 'declined',
       'material': widget.quote.totalMaterial,
@@ -392,7 +387,6 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
 
     final batch = FirebaseFirestore.instance.batch();
 
-    // ── Child tasks ───────────────────────────────────────────────────
     for (final task in widget.tasks) {
       if (!task.hasQuote) continue;
       final ref = FirebaseFirestore.instance
@@ -420,7 +414,6 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
       batch.update(ref, fields);
     }
 
-    // ── Project doc: write approval/decline to project-level history ──
     final projectRef = FirebaseFirestore.instance
         .collection('tasks')
         .doc(widget.projectId);
@@ -487,13 +480,11 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
                     TextStyle(color: Colors.grey[400], fontSize: 13),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      BorderSide(color: Colors.grey.shade300),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      BorderSide(color: Colors.grey.shade300),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -523,6 +514,7 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
         ],
       ),
     );
+
     if (confirmed != true) {
       messageController.dispose();
       return;
@@ -550,6 +542,49 @@ class _HomeownerActionsState extends State<_HomeownerActions> {
 
   @override
   Widget build(BuildContext context) {
+    // ── Quote already actioned — show status message only ──────────
+    if (widget.quote.status != 'pending') {
+      final isAccepted = widget.quote.status == 'accepted';
+      final color = isAccepted
+          ? const Color(0xFF43C59E)
+          : const Color(0xFFFF6B6B);
+
+      return Container(
+        width: double.infinity,
+        padding:
+            const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isAccepted
+                  ? Icons.check_circle_outline
+                  : Icons.cancel_outlined,
+              size: 15,
+              color: color,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              isAccepted
+                  ? 'You approved this quote'
+                  : 'You declined this quote',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ── Pending — show Approve + Decline ───────────────────────────
     return Row(
       children: [
         Expanded(
