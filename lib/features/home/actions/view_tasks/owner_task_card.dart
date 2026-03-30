@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -7,14 +8,23 @@ import 'task_detail_page.dart';
 
 class OwnerTaskCard extends StatefulWidget {
   final TaskModel task;
+  final int? orderNumber;
+  final bool reorderMode;
 
-  const OwnerTaskCard({super.key, required this.task});
+  const OwnerTaskCard({
+    super.key,
+    required this.task,
+    this.orderNumber,
+    this.reorderMode = false,
+  });
 
   @override
   State<OwnerTaskCard> createState() => _OwnerTaskCardState();
 }
 
 class _OwnerTaskCardState extends State<OwnerTaskCard> {
+  bool _showAllDates = false;
+  static const int _maxVisibleDates = 3;
 
   // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -87,9 +97,19 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
     }
   }
 
+  void _copyTaskId(BuildContext context) {
+    Clipboard.setData(ClipboardData(text: widget.task.taskId));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Task ID copied: ${widget.task.taskId}'),
+        backgroundColor: const Color(0xFF6C63FF),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   // ── Accept revision ──────────────────────────────────────────────────────
   Future<void> _acceptRevision(BuildContext context) async {
-    final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
 
     try {
@@ -110,14 +130,12 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
         'metadata.revision.resolution': 'accepted',
       };
 
-      // Apply fee if revised
       if (_revisesFee) {
         final requestedFee =
             (_revision['requestedFee'] as num?)?.toDouble() ?? 0;
         updates['guidePrice'] = requestedFee;
       }
 
-      // Apply dates if revised
       if (_revisesDeadline && _requestedDates.isNotEmpty) {
         final sortedDates = _requestedDates
             .map((d) => DateTime.tryParse(d))
@@ -132,7 +150,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
 
       batch.update(taskRef, updates);
 
-      // Write event
       final eventRef = taskRef.collection('events').doc(eventId);
       batch.set(eventRef, {
         'id': eventId,
@@ -173,10 +190,12 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16)),
         title: const Text(
           'Decline Revision',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
+          style: TextStyle(
+              fontWeight: FontWeight.bold, color: Color(0xFF1A1A2E)),
         ),
         content: const Text(
           'The revision will be rejected and the task will go back to the builder with original terms.',
@@ -185,7 +204,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child: const Text('Cancel',
+                style: TextStyle(color: Colors.grey)),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
@@ -212,7 +232,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
 
       final batch = FirebaseFirestore.instance.batch();
 
-      // Reset back to pending_acceptance with original values
       batch.update(taskRef, {
         'status': 'pending_acceptance',
         'actionSpace': ['accept_task', 'deny_task', 'revise_task'],
@@ -221,7 +240,6 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
         'metadata.revision.resolution': 'declined',
       });
 
-      // Write event
       final eventRef = taskRef.collection('events').doc(eventId);
       batch.set(eventRef, {
         'id': eventId,
@@ -261,19 +279,31 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
   Widget build(BuildContext context) {
     final task = widget.task;
     final dates = _scheduledDates;
+    final visibleDates = _showAllDates
+        ? dates
+        : dates.take(_maxVisibleDates).toList();
+    final hiddenCount = dates.length - _maxVisibleDates;
 
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => TaskDetailPage(task: task)),
-      ),
+      // Disable tap and long press in reorder mode
+      onTap: widget.reorderMode
+          ? null
+          : () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => TaskDetailPage(task: task)),
+              ),
+      onLongPress: widget.reorderMode
+          ? null
+          : () => _copyTaskId(context),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: _hasRevision
-              ? Border.all(color: const Color(0xFF4ECDC4), width: 1.5)
+              ? Border.all(
+                  color: const Color(0xFF4ECDC4), width: 1.5)
               : null,
           boxShadow: [
             BoxShadow(
@@ -291,9 +321,30 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Task name + status
+                  // Task name + order number + status
                   Row(
                     children: [
+                      if (widget.orderNumber != null) ...[
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: _statusColor.withOpacity(0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              '${widget.orderNumber}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: _statusColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
                       Container(
                         width: 10,
                         height: 10,
@@ -333,18 +384,31 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                   ),
                   const SizedBox(height: 10),
 
-                  // Contractor type
-                  if (task.contractorType != null)
-                    Row(
-                      children: [
+                  // Contractor type + duration days
+                  Row(
+                    children: [
+                      if (task.contractorType != null) ...[
                         Icon(Icons.work_outline,
                             size: 13, color: Colors.grey[400]),
                         const SizedBox(width: 6),
                         Text(task.contractorType!,
                             style: TextStyle(
-                                fontSize: 12, color: Colors.grey[500])),
+                                fontSize: 12,
+                                color: Colors.grey[500])),
+                        const SizedBox(width: 12),
                       ],
-                    ),
+                      if (task.durationDays > 0) ...[
+                        Icon(Icons.timelapse_outlined,
+                            size: 13, color: Colors.grey[400]),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${task.durationDays} day${task.durationDays > 1 ? 's' : ''}',
+                          style: TextStyle(
+                              fontSize: 12, color: Colors.grey[500]),
+                        ),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 6),
 
                   // Assigned builders
@@ -360,31 +424,36 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                       task.assignedBuilderIds.isEmpty
                           ? Text('No builder assigned',
                               style: TextStyle(
-                                  fontSize: 12, color: Colors.orange[400]))
+                                  fontSize: 12,
+                                  color: Colors.orange[400]))
                           : Expanded(
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: task.assignedBuilderIds
                                     .map((id) =>
                                         FutureBuilder<DocumentSnapshot>(
-                                          future: FirebaseFirestore.instance
+                                          future: FirebaseFirestore
+                                              .instance
                                               .collection('users')
                                               .doc(id)
                                               .get(),
                                           builder: (context, snapshot) {
-                                            final name = snapshot.hasData &&
+                                            final name = snapshot
+                                                        .hasData &&
                                                     snapshot.data!.exists
                                                 ? (snapshot.data!.data()
                                                         as Map<String,
-                                                            dynamic>)['name']
-                                                    as String? ??
+                                                            dynamic>)[
+                                                    'name'] as String? ??
                                                     id
                                                 : id;
                                             return Text(
                                               name,
                                               style: TextStyle(
                                                   fontSize: 12,
-                                                  color: Colors.grey[500]),
+                                                  color:
+                                                      Colors.grey[500]),
                                             );
                                           },
                                         ))
@@ -395,7 +464,7 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                   ),
                   const SizedBox(height: 6),
 
-                  // Scheduled dates
+                  // Scheduled dates — collapsed
                   if (dates.isEmpty)
                     Row(
                       children: [
@@ -404,7 +473,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                         const SizedBox(width: 6),
                         Text('Not scheduled',
                             style: TextStyle(
-                                fontSize: 12, color: Colors.orange[400])),
+                                fontSize: 12,
+                                color: Colors.orange[400])),
                       ],
                     )
                   else
@@ -419,7 +489,8 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                             Text(
                               '${dates.length} working day${dates.length > 1 ? 's' : ''}',
                               style: TextStyle(
-                                  fontSize: 12, color: Colors.grey[500]),
+                                  fontSize: 12,
+                                  color: Colors.grey[500]),
                             ),
                           ],
                         ),
@@ -427,305 +498,334 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
                         Wrap(
                           spacing: 4,
                           runSpacing: 4,
-                          children: dates
-                              .map((iso) => Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF6C63FF)
-                                          .withOpacity(0.08),
-                                      borderRadius:
-                                          BorderRadius.circular(20),
-                                      border: Border.all(
-                                          color: const Color(0xFF6C63FF)
-                                              .withOpacity(0.2)),
-                                    ),
-                                    child: Text(
-                                      _formatScheduledDate(iso),
-                                      style: const TextStyle(
-                                          fontSize: 11,
-                                          color: Color(0xFF6C63FF),
-                                          fontWeight: FontWeight.w500),
-                                    ),
-                                  ))
-                              .toList(),
+                          children: [
+                            ...visibleDates.map((iso) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF6C63FF)
+                                        .withOpacity(0.08),
+                                    borderRadius:
+                                        BorderRadius.circular(20),
+                                    border: Border.all(
+                                        color: const Color(0xFF6C63FF)
+                                            .withOpacity(0.2)),
+                                  ),
+                                  child: Text(
+                                    _formatScheduledDate(iso),
+                                    style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF6C63FF),
+                                        fontWeight: FontWeight.w500),
+                                  ),
+                                )),
+                            if (dates.length > _maxVisibleDates)
+                              GestureDetector(
+                                onTap: widget.reorderMode
+                                    ? null
+                                    : () => setState(() =>
+                                        _showAllDates = !_showAllDates),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.withOpacity(0.1),
+                                    borderRadius:
+                                        BorderRadius.circular(20),
+                                    border: Border.all(
+                                        color: Colors.grey
+                                            .withOpacity(0.3)),
+                                  ),
+                                  child: Text(
+                                    _showAllDates
+                                        ? 'Show less'
+                                        : '+$hiddenCount more',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[600],
+                                        fontWeight: FontWeight.w500),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
                   const SizedBox(height: 6),
 
-                  // Guide price
+                  // Guide price + quote price inline
                   Row(
                     children: [
-                      Icon(Icons.currency_pound,
-                          size: 13, color: Colors.grey[400]),
-                      const SizedBox(width: 6),
                       Text(
-                        'Guide: £${task.guidePriceMin.toStringAsFixed(0)} – £${task.guidePriceMax.toStringAsFixed(0)}',
+                        'Guide: ${task.guidePriceMin.toStringAsFixed(0)} – ${task.guidePriceMax.toStringAsFixed(0)}',
                         style: TextStyle(
                             fontSize: 12, color: Colors.grey[400]),
                       ),
+                      if (task.hasQuote &&
+                          task.quoteTotal != null) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          width: 1,
+                          height: 12,
+                          color: Colors.grey[300],
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Quote: ${task.quoteTotal!.toStringAsFixed(0)}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF43C59E),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (task.quoteStatus != null)
+                          _QuoteStatusBadge(
+                              status: task.quoteStatus!),
+                      ],
                     ],
                   ),
-
-                  // Quote & Agreed prices
-                  if (task.hasQuote) ...[
-                    const SizedBox(height: 6),
-                    if (task.agreedTotal != null &&
-                        task.agreedTotal! > 0 &&
-                        task.quoteTotal != task.agreedTotal) ...[
-                      Row(
-                        children: [
-                          Icon(Icons.fiber_new_rounded,
-                              size: 14,
-                              color: const Color(0xFFFF6B6B)),
-                          const SizedBox(width: 4),
-                          Text(
-                            'New Quote: £${(task.quoteTotal ?? 0).toStringAsFixed(0)}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFFF6B6B),
-                            ),
-                          ),
-                          const Spacer(),
-                          if (task.quoteStatus != null)
-                            _QuoteStatusBadge(status: task.quoteStatus!),
-                        ],
-                      ),
-                    ] else ...[
-                      Row(
-                        children: [
-                          Icon(Icons.check_circle_outline,
-                              size: 13,
-                              color: const Color(0xFF43C59E)),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Agreed: £${(task.agreedTotal ?? 0).toStringAsFixed(0)}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF43C59E),
-                            ),
-                          ),
-                          const Spacer(),
-                          if (task.quoteStatus != null)
-                            _QuoteStatusBadge(status: task.quoteStatus!),
-                        ],
-                      ),
-                    ],
-                  ],
                 ],
               ),
             ),
 
-            // ── Revision Section ─────────────────────────────────────────
-            if (_hasRevision) ...[
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4ECDC4).withOpacity(0.06),
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(14),
-                    bottomRight: Radius.circular(14),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header
-                    Row(
-                      children: [
-                        const Icon(Icons.edit_note_outlined,
-                            size: 16, color: Color(0xFF4ECDC4)),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'Revision Request',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF4ECDC4),
-                          ),
-                        ),
-                        const Spacer(),
-                        if (_revision['submittedAt'] != null)
-                          Text(
-                            _formatDate(_revision['submittedAt']),
-                            style: TextStyle(
-                                fontSize: 11, color: Colors.grey[400]),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Fee revision
-                    if (_revisesFee) ...[
-                      _sectionLabel('Fee Revision'),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _infoBox(
-                              label: 'Current Fee',
-                              value:
-                                  '£${(_revision['currentFee'] as num?)?.toStringAsFixed(0) ?? widget.task.guidePrice.toStringAsFixed(0)}',
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.arrow_forward,
-                              size: 16, color: Colors.grey),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _infoBox(
-                              label: 'Requested Fee',
-                              value:
-                                  '£${(_revision['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
-                              color: const Color(0xFF4ECDC4),
-                              highlight: true,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    // Deadline revision
-                    if (_revisesDeadline && _requestedDates.isNotEmpty) ...[
-                      _sectionLabel('Deadline Revision'),
-                      const SizedBox(height: 8),
-                      // Current dates
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Current: ',
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey[500])),
-                          Expanded(
-                            child: Wrap(
-                              spacing: 4,
-                              runSpacing: 4,
-                              children: _scheduledDates
-                                  .map((iso) => _datechip(
-                                      iso, Colors.grey.shade400))
-                                  .toList(),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      // Requested dates
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Requested: ',
-                              style: TextStyle(
-                                  fontSize: 11, color: Colors.grey[500])),
-                          Expanded(
-                            child: Wrap(
-                              spacing: 4,
-                              runSpacing: 4,
-                              children: _requestedDates
-                                  .map((iso) => _datechip(
-                                      iso, const Color(0xFF4ECDC4)))
-                                  .toList(),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-
-                    // Reason
-                    Container(
+            // ── Revision Section (animated) ───────────────────────────────
+            AnimatedSize(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              child: _hasRevision
+                  ? Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(10),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade200),
+                        color: const Color(0xFF4ECDC4)
+                            .withOpacity(0.06),
+                        borderRadius: const BorderRadius.only(
+                          bottomLeft: Radius.circular(14),
+                          bottomRight: Radius.circular(14),
+                        ),
                       ),
-                      child: Row(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.info_outline,
-                              size: 14, color: Colors.grey[400]),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              _revision['reason'] ?? '',
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey[600]),
+                          // Header
+                          Row(
+                            children: [
+                              const Icon(Icons.edit_note_outlined,
+                                  size: 16,
+                                  color: Color(0xFF4ECDC4)),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'Revision Request',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF4ECDC4),
+                                ),
+                              ),
+                              const Spacer(),
+                              if (_revision['submittedAt'] != null)
+                                Text(
+                                  _formatDate(
+                                      _revision['submittedAt']),
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[400]),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Fee revision
+                          if (_revisesFee) ...[
+                            _sectionLabel('Fee Revision'),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _infoBox(
+                                    label: 'Current Fee',
+                                    value:
+                                        '${(_revision['currentFee'] as num?)?.toStringAsFixed(0) ?? widget.task.guidePrice.toStringAsFixed(0)}',
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Icon(Icons.arrow_forward,
+                                    size: 16, color: Colors.grey),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _infoBox(
+                                    label: 'Requested Fee',
+                                    value:
+                                        '${(_revision['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                                    color: const Color(0xFF4ECDC4),
+                                    highlight: true,
+                                  ),
+                                ),
+                              ],
                             ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Deadline revision
+                          if (_revisesDeadline &&
+                              _requestedDates.isNotEmpty) ...[
+                            _sectionLabel('Deadline Revision'),
+                            const SizedBox(height: 8),
+                            Row(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text('Current: ',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[500])),
+                                Expanded(
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
+                                    children: _scheduledDates
+                                        .map((iso) => _datechip(iso,
+                                            Colors.grey.shade400))
+                                        .toList(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Text('Requested: ',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey[500])),
+                                Expanded(
+                                  child: Wrap(
+                                    spacing: 4,
+                                    runSpacing: 4,
+                                    children: _requestedDates
+                                        .map((iso) => _datechip(iso,
+                                            const Color(0xFF4ECDC4)))
+                                        .toList(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+
+                          // Reason
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius:
+                                  BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.grey.shade200),
+                            ),
+                            child: Row(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Icon(Icons.info_outline,
+                                    size: 14,
+                                    color: Colors.grey[400]),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    _revision['reason'] ?? '',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600]),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
+                          // Accept / Decline buttons
+                          Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      _acceptRevision(context),
+                                  child: Container(
+                                    padding:
+                                        const EdgeInsets.symmetric(
+                                            vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          const Color(0xFF43C59E),
+                                      borderRadius:
+                                          BorderRadius.circular(10),
+                                    ),
+                                    child: const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.check_rounded,
+                                            color: Colors.white,
+                                            size: 16),
+                                        SizedBox(width: 4),
+                                        Text('Accept',
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight:
+                                                    FontWeight.w600,
+                                                fontSize: 13)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      _declineRevision(context),
+                                  child: Container(
+                                    padding:
+                                        const EdgeInsets.symmetric(
+                                            vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          const Color(0xFFFF6B6B),
+                                      borderRadius:
+                                          BorderRadius.circular(10),
+                                    ),
+                                    child: const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.close_rounded,
+                                            color: Colors.white,
+                                            size: 16),
+                                        SizedBox(width: 4),
+                                        Text('Decline',
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight:
+                                                    FontWeight.w600,
+                                                fontSize: 13)),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Accept / Decline buttons
-                    Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => _acceptRevision(context),
-                            child: Container(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF43C59E),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.check_rounded,
-                                      color: Colors.white, size: 16),
-                                  SizedBox(width: 4),
-                                  Text('Accept',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => _declineRevision(context),
-                            child: Container(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFF6B6B),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.close_rounded,
-                                      color: Colors.white, size: 16),
-                                  SizedBox(width: 4),
-                                  Text('Decline',
-                                      style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 13)),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
           ],
         ),
       ),
@@ -756,8 +856,9 @@ class _OwnerTaskCardState extends State<OwnerTaskCard> {
         color: highlight ? color.withOpacity(0.1) : Colors.grey.shade50,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color:
-              highlight ? color.withOpacity(0.3) : Colors.grey.shade200,
+          color: highlight
+              ? color.withOpacity(0.3)
+              : Colors.grey.shade200,
         ),
       ),
       child: Column(
@@ -813,17 +914,23 @@ class _QuoteStatusBadge extends StatelessWidget {
 
   Color get _color {
     switch (status) {
-      case 'accepted': return const Color(0xFF43C59E);
-      case 'declined': return const Color(0xFFFF6B6B);
-      default: return const Color(0xFFFFB347);
+      case 'accepted':
+        return const Color(0xFF43C59E);
+      case 'declined':
+        return const Color(0xFFFF6B6B);
+      default:
+        return const Color(0xFFFFB347);
     }
   }
 
   String get _label {
     switch (status) {
-      case 'accepted': return 'Approved';
-      case 'declined': return 'Declined';
-      default: return 'Pending';
+      case 'accepted':
+        return 'Approved';
+      case 'declined':
+        return 'Declined';
+      default:
+        return 'Pending';
     }
   }
 
