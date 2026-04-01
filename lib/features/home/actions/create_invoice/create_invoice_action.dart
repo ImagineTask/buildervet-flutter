@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../base_action_tile.dart';
+import 'invoice_management_page.dart';
 
 class CreateInvoiceAction extends BaseActionTile {
   const CreateInvoiceAction({super.key, required super.project});
@@ -15,6 +16,11 @@ class CreateInvoiceAction extends BaseActionTile {
 
   @override
   void onTap(BuildContext context) {
-    // TODO: Navigate to invoice creation screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InvoiceManagementPage(project: project),
+      ),
+    );
   }
 }

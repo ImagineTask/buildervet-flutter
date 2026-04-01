@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../base_action_tile.dart';
+import 'photo_management_page.dart';
 
 class UploadPhotoAction extends BaseActionTile {
   const UploadPhotoAction({super.key, required super.project});
@@ -15,6 +16,11 @@ class UploadPhotoAction extends BaseActionTile {
 
   @override
   void onTap(BuildContext context) {
-    // TODO: Open image picker and upload to storage
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoManagementPage(project: project),
+      ),
+    );
   }
 }

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../features/Home/models/task_model.dart';
 import '../../features/Home/actions/view_tasks/view_tasks_page.dart';
+import '../../features/Home/actions/review_quotes/quote_management_page.dart';
 import '../../../main.dart';
 
 class AlertScreen extends StatelessWidget {
@@ -28,8 +29,31 @@ class AlertScreen extends StatelessWidget {
                 type: _parseType(d['type']),
                 isRead: d['isRead'] ?? false,
                 taskId: d['taskId'],
+                isQuoteAlert: _isQuoteAlert(
+                  d['type'],
+                  d['title'],
+                  d['description'],
+                ),
               );
             }).toList());
+  }
+
+  static bool _isQuoteAlert(
+      String? type, String? title, String? description) {
+    // Match by explicit type if backend ever sets it
+    const quoteTypes = {
+      'quote',
+      'quote_submitted',
+      'quote_approved',
+      'quote_declined',
+      'quote_updated',
+    };
+    if (quoteTypes.contains(type)) return true;
+
+    // Fallback: match by title/description keywords
+    final combined =
+        '${title ?? ''} ${description ?? ''}'.toLowerCase();
+    return combined.contains('quote');
   }
 
   static String _formatTime(dynamic ts) {
@@ -139,12 +163,11 @@ class AlertScreen extends StatelessWidget {
     await batch.commit();
   }
 
-  // ── Navigation ─────────────────────────────────────────────────────────────
+  // ── Navigation ──────────────────────────────────────────────────────────────
 
   Future<void> _handleTap(
       BuildContext context, String uid, _Alert alert) async {
     await _markAsRead(uid, alert.id);
-
     if (!context.mounted) return;
 
     final taskId = alert.taskId;
@@ -178,15 +201,45 @@ class AlertScreen extends StatelessWidget {
       final task = TaskModel.fromFirestore(taskDoc);
       final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
-      // ── Builder: task is assigned to them → Home Tasks tab
-      if (task.taskType == 'task' &&
-          task.assignedBuilderIds.contains(currentUid)) {
+      // ── Quote alert → QuoteManagementPage (always checked first) ───
+      if (alert.isQuoteAlert) {
+        // taskId may point to the project directly or a child task
+        TaskModel project = task;
+
+        if (task.taskType == 'task' && task.parentTaskId != null) {
+          final projectDoc = await FirebaseFirestore.instance
+              .collection('tasks')
+              .doc(task.parentTaskId)
+              .get();
+
+          if (!context.mounted) return;
+          if (!projectDoc.exists) return;
+
+          project = TaskModel.fromFirestore(projectDoc);
+        }
+
         if (!context.mounted) return;
-        homeTabNotifier.value = 1; // switches bottom nav to Home + Tasks tab
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => QuoteManagementPage(
+              projectId: project.taskId,
+              projectName: project.taskName,
+            ),
+          ),
+        );
         return;
       }
 
-      // ── Project owner: fetch parent project → ViewTasksPage
+      // ── Builder: task assigned to them → Home Tasks tab ────────────
+      if (task.taskType == 'task' &&
+          task.assignedBuilderIds.contains(currentUid)) {
+        if (!context.mounted) return;
+        homeTabNotifier.value = 1;
+        return;
+      }
+
+      // ── Project owner: fetch parent project → ViewTasksPage ────────
       if (task.taskType == 'task' && task.parentTaskId != null) {
         final projectDoc = await FirebaseFirestore.instance
             .collection('tasks')
@@ -390,6 +443,7 @@ class _Alert {
   final AlertType type;
   final bool isRead;
   final String? taskId;
+  final bool isQuoteAlert;
 
   const _Alert({
     required this.id,
@@ -399,6 +453,7 @@ class _Alert {
     required this.type,
     required this.isRead,
     this.taskId,
+    this.isQuoteAlert = false,
   });
 }
 
@@ -562,7 +617,9 @@ class _AlertCard extends StatelessWidget {
                         Row(
                           children: [
                             Text(
-                              'View task',
+                              alert.isQuoteAlert
+                                  ? 'View quote'
+                                  : 'View task',
                               style: TextStyle(
                                   fontSize: 11,
                                   color: color,
