@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../features/Home/models/task_model.dart';
 import '../../features/Home/actions/view_tasks/view_tasks_page.dart';
 import '../../features/Home/actions/review_quotes/quote_management_page.dart';
+import '../../features/Chat/chat_screen.dart';
 import '../../../main.dart';
 
 class AlertScreen extends StatelessWidget {
@@ -29,6 +30,7 @@ class AlertScreen extends StatelessWidget {
                 type: _parseType(d['type']),
                 isRead: d['isRead'] ?? false,
                 taskId: d['taskId'],
+                chatId: d['chatId'],          // ← new
                 isQuoteAlert: _isQuoteAlert(
                   d['type'],
                   d['title'],
@@ -40,7 +42,6 @@ class AlertScreen extends StatelessWidget {
 
   static bool _isQuoteAlert(
       String? type, String? title, String? description) {
-    // Match by explicit type if backend ever sets it
     const quoteTypes = {
       'quote',
       'quote_submitted',
@@ -50,7 +51,6 @@ class AlertScreen extends StatelessWidget {
     };
     if (quoteTypes.contains(type)) return true;
 
-    // Fallback: match by title/description keywords
     final combined =
         '${title ?? ''} ${description ?? ''}'.toLowerCase();
     return combined.contains('quote');
@@ -78,6 +78,8 @@ class AlertScreen extends StatelessWidget {
         return AlertType.success;
       case 'security':
         return AlertType.security;
+      case 'chat':
+        return AlertType.chat;              // ← new
       default:
         return AlertType.info;
     }
@@ -163,13 +165,86 @@ class AlertScreen extends StatelessWidget {
     await batch.commit();
   }
 
-  // ── Navigation ──────────────────────────────────────────────────────────────
+  // ── Navigation ────────────────────────────────────────────────────────────
 
   Future<void> _handleTap(
       BuildContext context, String uid, _Alert alert) async {
     await _markAsRead(uid, alert.id);
     if (!context.mounted) return;
 
+    // ── Chat alert → open ConversationScreen directly ─────────────────────
+    if (alert.type == AlertType.chat && alert.chatId != null) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        final chatDoc = await FirebaseFirestore.instance
+            .collection('chats')
+            .doc(alert.chatId)
+            .get();
+
+        if (!context.mounted) return;
+        Navigator.pop(context); // dismiss loader
+
+        if (!chatDoc.exists) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Conversation no longer exists'),
+              backgroundColor: Colors.grey,
+            ),
+          );
+          return;
+        }
+
+        final data = chatDoc.data()!;
+        final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+        final participants = List<String>.from(data['participants'] ?? []);
+        final otherUid = participants.firstWhere(
+          (p) => p != currentUid,
+          orElse: () => '',
+        );
+        final names = Map<String, dynamic>.from(
+            data['participantNames'] as Map? ?? {});
+        final initials = Map<String, dynamic>.from(
+            data['participantInitials'] as Map? ?? {});
+        final colors = Map<String, dynamic>.from(
+            data['participantColors'] as Map? ?? {});
+        final online = Map<String, dynamic>.from(
+            data['isOnline'] as Map? ?? {});
+
+        if (!context.mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ConversationScreen(
+              chatId: alert.chatId!,
+              currentUid: currentUid,
+              otherName: names[otherUid] as String? ?? 'Unknown',
+              otherInitials: initials[otherUid] as String? ?? '?',
+              otherAvatarColor:
+                  Color(colors[otherUid] as int? ?? 0xFF4F6EF7),
+              isOnline: online[otherUid] as bool? ?? false,
+            ),
+          ),
+        );
+      } catch (e) {
+        if (context.mounted) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to open chat: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+      return;
+    }
+
+    // ── Task / quote alerts ───────────────────────────────────────────────
     final taskId = alert.taskId;
     if (taskId == null) return;
 
@@ -186,7 +261,7 @@ class AlertScreen extends StatelessWidget {
           .get();
 
       if (!context.mounted) return;
-      Navigator.pop(context); // dismiss loader
+      Navigator.pop(context);
 
       if (!taskDoc.exists) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -201,23 +276,18 @@ class AlertScreen extends StatelessWidget {
       final task = TaskModel.fromFirestore(taskDoc);
       final currentUid = FirebaseAuth.instance.currentUser?.uid;
 
-      // ── Quote alert → QuoteManagementPage (always checked first) ───
+      // Quote alert → QuoteManagementPage
       if (alert.isQuoteAlert) {
-        // taskId may point to the project directly or a child task
         TaskModel project = task;
-
         if (task.taskType == 'task' && task.parentTaskId != null) {
           final projectDoc = await FirebaseFirestore.instance
               .collection('tasks')
               .doc(task.parentTaskId)
               .get();
-
           if (!context.mounted) return;
           if (!projectDoc.exists) return;
-
           project = TaskModel.fromFirestore(projectDoc);
         }
-
         if (!context.mounted) return;
         Navigator.push(
           context,
@@ -231,7 +301,7 @@ class AlertScreen extends StatelessWidget {
         return;
       }
 
-      // ── Builder: task assigned to them → Home Tasks tab ────────────
+      // Builder: task assigned → Home Tasks tab
       if (task.taskType == 'task' &&
           task.assignedBuilderIds.contains(currentUid)) {
         if (!context.mounted) return;
@@ -239,15 +309,13 @@ class AlertScreen extends StatelessWidget {
         return;
       }
 
-      // ── Project owner: fetch parent project → ViewTasksPage ────────
+      // Project owner: open ViewTasksPage
       if (task.taskType == 'task' && task.parentTaskId != null) {
         final projectDoc = await FirebaseFirestore.instance
             .collection('tasks')
             .doc(task.parentTaskId)
             .get();
-
         if (!context.mounted) return;
-
         if (projectDoc.exists) {
           final project = TaskModel.fromFirestore(projectDoc);
           Navigator.push(
@@ -433,7 +501,7 @@ class AlertScreen extends StatelessWidget {
 
 // ── Models ────────────────────────────────────────────────────────────────────
 
-enum AlertType { warning, error, success, info, security }
+enum AlertType { warning, error, success, info, security, chat }   // ← chat added
 
 class _Alert {
   final String id;
@@ -443,6 +511,7 @@ class _Alert {
   final AlertType type;
   final bool isRead;
   final String? taskId;
+  final String? chatId;        // ← new
   final bool isQuoteAlert;
 
   const _Alert({
@@ -453,6 +522,7 @@ class _Alert {
     required this.type,
     required this.isRead,
     this.taskId,
+    this.chatId,
     this.isQuoteAlert = false,
   });
 }
@@ -472,6 +542,8 @@ extension _AlertTypeExtension on AlertType {
         return const Color(0xFF6C63FF);
       case AlertType.security:
         return const Color(0xFFE056A0);
+      case AlertType.chat:
+        return const Color(0xFF4F6EF7);   // ← indigo — matches chat theme
     }
   }
 
@@ -487,6 +559,8 @@ extension _AlertTypeExtension on AlertType {
         return Icons.info_outline;
       case AlertType.security:
         return Icons.security_outlined;
+      case AlertType.chat:
+        return Icons.chat_bubble_outline_rounded;   // ← chat bubble icon
     }
   }
 
@@ -502,6 +576,8 @@ extension _AlertTypeExtension on AlertType {
         return 'Info';
       case AlertType.security:
         return 'Security';
+      case AlertType.chat:
+        return 'Message';   // ← shown in the type badge
     }
   }
 }
@@ -517,7 +593,8 @@ class _AlertCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = alert.type.color;
-    final hasNavigation = alert.taskId != null;
+    final isChatAlert = alert.type == AlertType.chat;
+    final hasNavigation = alert.taskId != null || alert.chatId != null;
 
     return GestureDetector(
       onTap: onTap,
@@ -617,9 +694,11 @@ class _AlertCard extends StatelessWidget {
                         Row(
                           children: [
                             Text(
-                              alert.isQuoteAlert
-                                  ? 'View quote'
-                                  : 'View task',
+                              isChatAlert
+                                  ? 'Open chat'
+                                  : alert.isQuoteAlert
+                                      ? 'View quote'
+                                      : 'View task',
                               style: TextStyle(
                                   fontSize: 11,
                                   color: color,

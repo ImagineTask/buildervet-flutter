@@ -5,6 +5,10 @@ const { getMessaging } = require("firebase-admin/messaging");
 
 initializeApp();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Task triggers (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Trigger on CREATE — new task assigned
 exports.onTaskAssigned = onDocumentCreated("tasks/{taskId}", async (event) => {
   const task = event.data.data();
@@ -34,7 +38,7 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
   console.log("🔄 onTaskUpdated fired for taskId:", taskId);
   console.log("📋 taskType:", after.taskType);
 
-  // ── Quote notification: fires on project task whenever quote is sent/resent
+  // ── Quote notification ────────────────────────────────────────────────────
   if (after.taskType === "project") {
     const beforeSentAt = before.quoteLastSentAt?.toMillis?.() ?? null;
     const afterSentAt = after.quoteLastSentAt?.toMillis?.() ?? null;
@@ -59,14 +63,14 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
   const beforeBuilderIds = before.assignedBuilderIds ?? [];
   const afterBuilderIds = after.assignedBuilderIds ?? [];
 
-  // ── Builder assignment notification ───────────────────────────────────────
+  // ── Builder assignment ────────────────────────────────────────────────────
   const newlyAssigned = afterBuilderIds.filter(id => !beforeBuilderIds.includes(id));
   if (newlyAssigned.length > 0) {
     console.log("🔔 New builders assigned:", newlyAssigned);
     await notifyRecipients(newlyAssigned, "New Task Assigned", after.taskName, taskId);
   }
 
-  // ── Task denied → notify project owner ────────────────────────────────────
+  // ── Task denied ───────────────────────────────────────────────────────────
   if (beforeStatus !== "unassigned" && afterStatus === "unassigned" && after.ownerId) {
     console.log("🔔 Task denied — notifying project owner:", after.ownerId);
     await notifyRecipients(
@@ -77,7 +81,7 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
     );
   }
 
-  // ── Task revised → notify project owner ───────────────────────────────────
+  // ── Task revised ──────────────────────────────────────────────────────────
   if (beforeStatus !== "revising" && afterStatus === "revising" && after.ownerId) {
     console.log("🔔 Task revised — notifying project owner:", after.ownerId);
     await notifyRecipients(
@@ -88,7 +92,7 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
     );
   }
 
-  // ── Task accepted → notify project owner ──────────────────────────────────
+  // ── Task accepted ─────────────────────────────────────────────────────────
   if (beforeStatus !== "active" && afterStatus === "active" && after.ownerId) {
     console.log("🔔 Task accepted — notifying project owner:", after.ownerId);
     await notifyRecipients(
@@ -100,7 +104,153 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
   }
 });
 
-// Shared helper
+// ─────────────────────────────────────────────────────────────────────────────
+// Chat trigger — fires when a new message is created in any conversation
+// ─────────────────────────────────────────────────────────────────────────────
+
+exports.onChatMessageCreated = onDocumentCreated(
+  "chats/{chatId}/messages/{messageId}",
+  async (event) => {
+    const message = event.data.data();
+    const chatId = event.params.chatId;
+    const messageId = event.params.messageId;
+
+    console.log("💬 onChatMessageCreated fired — chatId:", chatId, "messageId:", messageId);
+
+    const senderId = message.senderId;
+    if (!senderId) {
+      console.log("⚠️ No senderId on message, skipping.");
+      return;
+    }
+
+    // ── Load the parent chat doc to find participants + sender name ───────────
+    const chatDoc = await getFirestore().collection("chats").doc(chatId).get();
+    if (!chatDoc.exists) {
+      console.log("⚠️ Chat doc not found:", chatId);
+      return;
+    }
+
+    const chatData = chatDoc.data();
+    const participants = chatData.participants ?? [];
+    const participantNames = chatData.participantNames ?? {};
+
+    // Recipients = everyone in the chat except the sender
+    const recipientIds = participants.filter(id => id !== senderId);
+    if (recipientIds.length === 0) {
+      console.log("⚠️ No recipients to notify.");
+      return;
+    }
+
+    // Sender's display name from participantNames map
+    const senderName = participantNames[senderId] ?? "Someone";
+
+    // Notification body — image or text
+    const isImage = message.type === "image";
+    const notifBody = isImage
+      ? `${senderName} sent a photo`
+      : `${senderName}: ${_truncate(message.text ?? "", 80)}`;
+
+    console.log(`🔔 Notifying ${recipientIds.length} recipient(s) — body: "${notifBody}"`);
+
+    // ── Notify each recipient — skip if they have the chat open (unread = 0) ──
+    for (const recipientId of recipientIds) {
+      // Only send push if the recipient actually has unread messages
+      // (unreadCount[recipientId] > 0 means they haven't seen it yet)
+      const unreadCount = chatData.unreadCount?.[recipientId] ?? 0;
+      if (unreadCount === 0) {
+        console.log(`ℹ️ ${recipientId} has chat open (unread=0), skipping push.`);
+        // Still write the in-app alert so it appears in their notification centre
+      }
+
+      try {
+        const userDoc = await getFirestore()
+          .collection("users")
+          .doc(recipientId)
+          .get();
+
+        if (!userDoc.exists) {
+          console.log("⚠️ User not found:", recipientId);
+          continue;
+        }
+
+        const token = userDoc.data()?.fcmToken;
+        console.log(`📱 FCM token for ${recipientId}:`, token ?? "NOT FOUND");
+
+        // ── Push notification (only if unread) ────────────────────────────────
+        if (token && unreadCount > 0) {
+          try {
+            await getMessaging().send({
+              token,
+              notification: {
+                title: senderName,
+                body: isImage ? "📷 Photo" : _truncate(message.text ?? "", 80),
+              },
+              data: {
+                type: "chat",
+                chatId,
+                senderId,
+              },
+              // iOS: show in foreground, play sound, increment badge
+              apns: {
+                payload: {
+                  aps: {
+                    sound: "default",
+                    badge: 1,
+                  },
+                },
+              },
+              // Android: high priority so it wakes the screen
+              android: {
+                priority: "high",
+                notification: {
+                  sound: "default",
+                  channelId: "chat_messages",
+                },
+              },
+            });
+            console.log("✅ Chat push sent to:", recipientId);
+          } catch (fcmErr) {
+            if (
+              fcmErr.errorInfo?.code === "messaging/registration-token-not-registered" ||
+              fcmErr.errorInfo?.code === "messaging/invalid-registration-token"
+            ) {
+              console.log("🗑️ Stale FCM token removed for:", recipientId);
+              await getFirestore()
+                .collection("users")
+                .doc(recipientId)
+                .update({ fcmToken: null });
+            } else {
+              console.error("❌ FCM send error for:", recipientId, fcmErr);
+            }
+          }
+        }
+
+        // ── In-app alert (always written) ─────────────────────────────────────
+        await getFirestore()
+          .collection("alerts")
+          .doc(recipientId)
+          .collection("items")
+          .add({
+            title: senderName,
+            description: isImage ? "Sent you a photo" : _truncate(message.text ?? "", 120),
+            type: "chat",
+            isRead: false,
+            chatId,
+            createdAt: new Date(),
+          });
+        console.log("✅ Chat alert written for:", recipientId);
+
+      } catch (err) {
+        console.error("❌ Error for recipient", recipientId, err);
+      }
+    }
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function notifyRecipients(recipientIds, title, body, taskId) {
   for (const recipientId of recipientIds) {
     try {
@@ -137,7 +287,7 @@ async function notifyRecipients(recipientIds, title, body, taskId) {
         }
       }
 
-      // Always write the in-app alert regardless of push result
+      // Always write the in-app alert
       await getFirestore()
         .collection("alerts")
         .doc(recipientId)
@@ -147,7 +297,7 @@ async function notifyRecipients(recipientIds, title, body, taskId) {
           description: body,
           type: "info",
           isRead: false,
-          taskId: taskId,  // ← added
+          taskId,
           createdAt: new Date(),
         });
       console.log("✅ Alert written for:", recipientId);
@@ -156,4 +306,10 @@ async function notifyRecipients(recipientIds, title, body, taskId) {
       console.error("❌ Error for recipient", recipientId, err);
     }
   }
+}
+
+// Truncate long strings for notification previews
+function _truncate(str, maxLen) {
+  if (str.length <= maxLen) return str;
+  return str.substring(0, maxLen).trimEnd() + "…";
 }
