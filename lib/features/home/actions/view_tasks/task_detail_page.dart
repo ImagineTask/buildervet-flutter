@@ -24,15 +24,19 @@ class _TaskDetailPageState extends State<TaskDetailPage>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  late TaskModel _task;
+  // The "working" copy used during edit mode.
+  // Outside edit mode, the UI always reads from the stream snapshot.
+  late TaskModel _editSnapshot;
 
   bool _editMode = false;
   bool _isSaving = false;
   DateTime? _editStartDate;
   DateTime? _editEndDate;
 
-  Color get _statusColor {
-    switch (_task.status) {
+  // ── Helpers that work on any TaskModel ───────────────────────────────────
+
+  Color _statusColor(TaskModel t) {
+    switch (t.status) {
       case 'draft':              return const Color(0xFF9E9E9E);
       case 'pending_acceptance': return const Color(0xFFFFB347);
       case 'active':             return const Color(0xFF6C63FF);
@@ -43,60 +47,68 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     }
   }
 
-  String get _statusLabel {
-    switch (_task.status) {
+  String _statusLabel(TaskModel t) {
+    switch (t.status) {
       case 'draft':              return 'Draft';
       case 'pending_acceptance': return 'Awaiting Acceptance';
       case 'active':             return 'Active';
       case 'negotiating':        return 'Negotiating';
       case 'done':               return 'Done';
       case 'denied':             return 'Denied';
-      default:                   return _task.status;
+      default:                   return t.status;
     }
   }
 
-  bool get _hasNegotiation =>
-      _task.metadata['negotiation'] != null &&
-      _task.status == 'negotiating';
+  bool _hasNegotiation(TaskModel t) =>
+      t.metadata['negotiation'] != null && t.status == 'negotiating';
 
-  Map<String, dynamic> get _negotiation =>
-      Map<String, dynamic>.from(_task.metadata['negotiation'] ?? {});
+  Map<String, dynamic> _negotiation(TaskModel t) =>
+      Map<String, dynamic>.from(t.metadata['negotiation'] ?? {});
 
-  List<String> get _actionSpace =>
-      List<String>.from(_task.metadata['actionSpace'] ?? []);
+  List<String> _actionSpace(TaskModel t) =>
+      List<String>.from(t.metadata['actionSpace'] ?? []);
 
   // ── Date formatters ───────────────────────────────────────────────────────
 
   String _formatDateTime(String? iso) {
     if (iso == null) return '—';
     try {
-      return DateFormat('d MMM yyyy · HH:mm').format(DateTime.parse(iso).toLocal());
-    } catch (_) { return '—'; }
+      return DateFormat('d MMM yyyy · HH:mm')
+          .format(DateTime.parse(iso).toLocal());
+    } catch (_) {
+      return '—';
+    }
   }
 
-  // Formats a scheduled date ISO string as "6 Apr 2026"
   String _formatScheduledDate(dynamic iso) {
     try {
-      return DateFormat('d MMM yyyy').format(DateTime.parse(iso.toString()).toLocal());
+      return DateFormat('d MMM yyyy')
+          .format(DateTime.parse(iso.toString()).toLocal());
     } catch (_) {
       return iso.toString();
     }
   }
 
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
 
-    _task = widget.task;
-
-    _descriptionController = TextEditingController(text: _task.description);
+    _editSnapshot = widget.task;
+    _descriptionController =
+        TextEditingController(text: widget.task.description);
     _durationController = TextEditingController(
-        text: (_task.metadata['durationDays'] ?? '').toString());
+        text: (widget.task.metadata['durationDays'] ?? '').toString());
 
-    final rawStart = _task.metadata['startTime'] as String?;
-    final rawEnd   = _task.metadata['endTime']   as String?;
-    if (rawStart != null) _editStartDate = DateTime.tryParse(rawStart)?.toLocal();
-    if (rawEnd   != null) _editEndDate   = DateTime.tryParse(rawEnd)?.toLocal();
+    final rawStart = widget.task.metadata['startTime'] as String?;
+    final rawEnd   = widget.task.metadata['endTime']   as String?;
+    if (rawStart != null) {
+      _editStartDate = DateTime.tryParse(rawStart)?.toLocal();
+    }
+    if (rawEnd != null) {
+      _editEndDate = DateTime.tryParse(rawEnd)?.toLocal();
+    }
 
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 400));
@@ -113,32 +125,36 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     super.dispose();
   }
 
-  Future<void> _reloadTask() async {
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('tasks')
-          .doc(_task.id)
-          .get();
-      if (snap.exists && mounted) {
-        setState(() => _task = TaskModel.fromFirestore(snap));
-      }
-    } catch (_) {}
+  // ── Edit mode ─────────────────────────────────────────────────────────────
+
+  /// Called when the stream emits a new snapshot.
+  /// If the user is currently editing we do NOT overwrite their controllers,
+  /// but we keep _editSnapshot current so Save writes the right document id.
+  void _onStreamUpdate(TaskModel fresh) {
+    if (!_editMode) {
+      // Safe to update everything — nothing is being edited.
+      _editSnapshot = fresh;
+    } else {
+      // Only keep the identity reference current; leave controllers alone.
+      _editSnapshot = fresh;
+    }
   }
 
-  void _enterEditMode() => setState(() => _editMode = true);
-
-  void _cancelEdit() {
-    _descriptionController.text = _task.description;
+  void _enterEditMode(TaskModel current) {
+    // Seed controllers from the latest live data before entering edit mode.
+    _descriptionController.text = current.description;
     _durationController.text =
-        (_task.metadata['durationDays'] ?? '').toString();
-    final rawStart = _task.metadata['startTime'] as String?;
-    final rawEnd   = _task.metadata['endTime']   as String?;
+        (current.metadata['durationDays'] ?? '').toString();
+    final rawStart = current.metadata['startTime'] as String?;
+    final rawEnd   = current.metadata['endTime']   as String?;
     _editStartDate =
         rawStart != null ? DateTime.tryParse(rawStart)?.toLocal() : null;
     _editEndDate =
         rawEnd != null ? DateTime.tryParse(rawEnd)?.toLocal() : null;
-    setState(() => _editMode = false);
+    setState(() => _editMode = true);
   }
+
+  void _cancelEdit() => setState(() => _editMode = false);
 
   Future<void> _saveChanges() async {
     setState(() => _isSaving = true);
@@ -149,18 +165,25 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       };
       final duration = int.tryParse(_durationController.text);
       if (duration != null) updates['metadata.durationDays'] = duration;
-      if (_editStartDate != null)
-        updates['metadata.startTime'] = _editStartDate!.toUtc().toIso8601String();
-      if (_editEndDate != null)
-        updates['metadata.endTime'] = _editEndDate!.toUtc().toIso8601String();
+      if (_editStartDate != null) {
+        updates['metadata.startTime'] =
+            _editStartDate!.toUtc().toIso8601String();
+      }
+      if (_editEndDate != null) {
+        updates['metadata.endTime'] =
+            _editEndDate!.toUtc().toIso8601String();
+      }
 
       await FirebaseFirestore.instance
           .collection('tasks')
-          .doc(_task.id)
+          .doc(_editSnapshot.id)
           .update(updates);
 
       if (mounted) {
-        setState(() { _editMode = false; _isSaving = false; });
+        setState(() {
+          _editMode  = false;
+          _isSaving  = false;
+        });
         _showSnack('Changes saved');
       }
     } catch (e) {
@@ -170,6 +193,8 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       }
     }
   }
+
+  // ── Snack ─────────────────────────────────────────────────────────────────
 
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -185,70 +210,96 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     ));
   }
 
+  // ── Input decoration ──────────────────────────────────────────────────────
+
   InputDecoration _inputDeco(String hint) => InputDecoration(
-    hintText: hint,
-    hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-    filled: true,
-    fillColor: const Color(0xFFF9F9FF),
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: Colors.grey.shade200),
-    ),
-    enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: Colors.grey.shade200),
-    ),
-    focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 2),
-    ),
-  );
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        filled: true,
+        fillColor: const Color(0xFFF9F9FF),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 2),
+        ),
+      );
+
+  // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FC),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: CustomScrollView(
-          slivers: [
-            _buildAppBar(),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  const SizedBox(height: 16),
-                  _buildStatusBanner(),
-                  const SizedBox(height: 16),
-                  _buildDescriptionSection(),
-                  const SizedBox(height: 16),
-                  _buildPriceSection(),
-                  const SizedBox(height: 16),
-                  _buildAssignedBuilderSection(),
-                  if (_hasNegotiation) ...[
-                    const SizedBox(height: 16),
-                    _buildNegotiationSection(),
-                  ],
-                  if (_actionSpace.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _buildActionSpaceSection(),
-                  ],
-                  const SizedBox(height: 16),
-                  _buildAuditSection(),
-                  const SizedBox(height: 24),
-                ]),
-              ),
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tasks')
+          .doc(widget.task.id)
+          .snapshots(),
+      builder: (context, snapshot) {
+        // While waiting for the first snapshot, use the data passed in.
+        final TaskModel task = snapshot.hasData && snapshot.data!.exists
+            ? TaskModel.fromFirestore(snapshot.data!)
+            : widget.task;
+
+        // Keep our internal reference in sync (edit-safe).
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _onStreamUpdate(task);
+        });
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF7F8FC),
+          body: FadeTransition(
+            opacity: _fadeAnimation,
+            child: CustomScrollView(
+              slivers: [
+                _buildAppBar(task),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      const SizedBox(height: 16),
+                      _buildStatusBanner(task),
+                      const SizedBox(height: 16),
+                      _buildDescriptionSection(task),
+                      const SizedBox(height: 16),
+                      _buildPriceSection(task),
+                      const SizedBox(height: 16),
+                      _buildAssignedBuilderSection(task),
+                      if (_hasNegotiation(task)) ...[
+                        const SizedBox(height: 16),
+                        _buildNegotiationSection(task),
+                      ],
+                      if (_actionSpace(task).isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        _buildActionSpaceSection(task),
+                      ],
+                      const SizedBox(height: 16),
+                      _buildAuditSection(task),
+                      const SizedBox(height: 24),
+                    ]),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _buildFab(),
+          ),
+          floatingActionButtonLocation:
+              FloatingActionButtonLocation.centerFloat,
+          floatingActionButton: _buildFab(task),
+        );
+      },
     );
   }
 
-  SliverAppBar _buildAppBar() {
+  // ── AppBar ────────────────────────────────────────────────────────────────
+
+  SliverAppBar _buildAppBar(TaskModel task) {
     return SliverAppBar(
       expandedHeight: 110,
       floating: false,
@@ -277,7 +328,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _task.taskName,
+              task.taskName,
               style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -285,8 +336,8 @@ class _TaskDetailPageState extends State<TaskDetailPage>
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            if (_task.contractorType != null)
-              Text(_task.contractorType!,
+            if (task.contractorType != null)
+              Text(task.contractorType!,
                   style: TextStyle(fontSize: 11, color: Colors.grey[500])),
           ],
         ),
@@ -294,7 +345,9 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  Widget _buildFab() {
+  // ── FAB ───────────────────────────────────────────────────────────────────
+
+  Widget _buildFab(TaskModel task) {
     if (_editMode) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -386,7 +439,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       child: SizedBox(
         height: 56,
         child: GestureDetector(
-          onTap: _enterEditMode,
+          onTap: () => _enterEditMode(task),
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -420,14 +473,19 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  Widget _buildStatusBanner() {
-    final taskOrder = _task.metadata['taskOrder'];
+  // ── Sections ──────────────────────────────────────────────────────────────
+
+  Widget _buildStatusBanner(TaskModel task) {
+    final color      = _statusColor(task);
+    final label      = _statusLabel(task);
+    final taskOrder  = task.metadata['taskOrder'];
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: _statusColor.withOpacity(0.08),
+        color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _statusColor.withOpacity(0.2)),
+        border: Border.all(color: color.withOpacity(0.2)),
       ),
       child: Row(
         children: [
@@ -435,26 +493,27 @@ class _TaskDetailPageState extends State<TaskDetailPage>
             width: 10,
             height: 10,
             decoration: BoxDecoration(
-              color: _statusColor,
+              color: color,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                    color: _statusColor.withOpacity(0.4),
+                    color: color.withOpacity(0.4),
                     blurRadius: 6,
                     spreadRadius: 1),
               ],
             ),
           ),
           const SizedBox(width: 10),
-          Text(_statusLabel,
+          Text(label,
               style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: _statusColor)),
+                  color: color)),
           const Spacer(),
           if (taskOrder != null)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
@@ -471,7 +530,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  Widget _buildDescriptionSection() {
+  Widget _buildDescriptionSection(TaskModel task) {
     return _SectionCard(
       title: 'Description',
       icon: Icons.notes_rounded,
@@ -480,44 +539,48 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           ? TextField(
               controller: _descriptionController,
               maxLines: 4,
-              style: TextStyle(
-                  fontSize: 14, color: Colors.grey[700], height: 1.5),
+              style:
+                  TextStyle(fontSize: 14, color: Colors.grey[700], height: 1.5),
               decoration: _inputDeco('Describe the task...'),
             )
           : Text(
-              _task.description.isEmpty
+              task.description.isEmpty
                   ? 'No description provided.'
-                  : _task.description,
+                  : task.description,
               style: TextStyle(
                   fontSize: 14,
-                  color: _task.description.isEmpty
+                  color: task.description.isEmpty
                       ? Colors.grey[400]
                       : Colors.grey[600],
                   height: 1.6,
-                  fontStyle: _task.description.isEmpty
+                  fontStyle: task.description.isEmpty
                       ? FontStyle.italic
                       : FontStyle.normal),
             ),
     );
   }
 
-  Widget _buildPriceSection() {
-    final hasQuote = _task.hasQuote;
-    final quoteTotal = _task.quoteTotal ?? 0;
-    final agreedTotal = _task.agreedTotal ?? 0;
-    final isNewQuote =
+  Widget _buildPriceSection(TaskModel task) {
+    final hasQuote    = task.hasQuote;
+    final quoteTotal  = task.quoteTotal  ?? 0;
+    final agreedTotal = task.agreedTotal ?? 0;
+    final isNewQuote  =
         hasQuote && agreedTotal > 0 && quoteTotal != agreedTotal;
 
     return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => QuoteManagementPage(
-            projectId: _task.parentTaskId ?? _task.taskId,
-            projectName: _task.taskName,
+      onTap: () async {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => QuoteManagementPage(
+              projectId:   task.parentTaskId ?? task.taskId,
+              projectName: task.taskName,
+            ),
           ),
-        ),
-      ),
+        );
+        // No manual reload needed — the stream will automatically
+        // reflect any quote changes made in QuoteManagementPage.
+      },
       child: _SectionCard(
         title: 'Price',
         icon: Icons.currency_pound_rounded,
@@ -525,8 +588,10 @@ class _TaskDetailPageState extends State<TaskDetailPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Guide range
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: const Color(0xFFF5F5F5),
                 borderRadius: BorderRadius.circular(10),
@@ -535,9 +600,10 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Guide Range',
-                      style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey[500])),
                   Text(
-                    '£${_task.guidePriceMin.toStringAsFixed(0)} – £${_task.guidePriceMax.toStringAsFixed(0)}',
+                    '£${task.guidePriceMin.toStringAsFixed(0)} – £${task.guidePriceMax.toStringAsFixed(0)}',
                     style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -547,6 +613,8 @@ class _TaskDetailPageState extends State<TaskDetailPage>
               ),
             ),
             const SizedBox(height: 12),
+
+            // Quote / no-quote
             if (hasQuote) ...[
               Container(
                 padding: const EdgeInsets.all(12),
@@ -637,14 +705,15 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                   ],
                 ),
               ),
-              if (_task.quoteStatus != null) ...[
+              if (task.quoteStatus != null) ...[
                 const SizedBox(height: 8),
                 _QuoteStatusChip(
-                  status: _task.quoteStatus!,
-                  declineReason: _task.quoteDeclineReason,
+                  status:        task.quoteStatus!,
+                  declineReason: task.quoteDeclineReason,
                 ),
               ],
             ] else ...[
+              // ── No quote yet ──────────────────────────────────────
               Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 10),
@@ -670,20 +739,20 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  Widget _buildAssignedBuilderSection() {
-    final builderIds = _task.assignedBuilderIds;
+  Widget _buildAssignedBuilderSection(TaskModel task) {
+    final builderIds     = task.assignedBuilderIds;
     final scheduledDates =
-        List<dynamic>.from(_task.metadata['scheduledDates'] ?? []);
+        List<dynamic>.from(task.metadata['scheduledDates'] ?? []);
 
     return GestureDetector(
       onTap: () async {
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => TaskScheduleDetailPage(task: _task),
+            builder: (_) => TaskScheduleDetailPage(task: task),
           ),
         );
-        await _reloadTask();
+        // Stream handles any updates automatically — no manual reload needed.
       },
       child: _SectionCard(
         title: 'Assigned Builder',
@@ -693,16 +762,14 @@ class _TaskDetailPageState extends State<TaskDetailPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Builder list ─────────────────────────────────────────
             if (builderIds.isEmpty)
               Row(
                 children: [
-                  Icon(Icons.info_outline,
-                      size: 14, color: Colors.orange[300]),
+                  Icon(Icons.info_outline, size: 14, color: Colors.orange[300]),
                   const SizedBox(width: 6),
                   Text('No builder assigned yet',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.orange[400])),
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.orange[400])),
                 ],
               )
             else
@@ -727,10 +794,12 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF43C59E).withOpacity(0.06),
+                          color:
+                              const Color(0xFF43C59E).withOpacity(0.06),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                              color: const Color(0xFF43C59E).withOpacity(0.2)),
+                              color: const Color(0xFF43C59E)
+                                  .withOpacity(0.2)),
                         ),
                         child: Row(
                           children: [
@@ -765,7 +834,6 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                 ),
               ),
 
-            // ── Scheduled dates ──────────────────────────────────────
             if (scheduledDates.isNotEmpty) ...[
               const SizedBox(height: 12),
               Divider(height: 1, color: Colors.grey.shade100),
@@ -800,7 +868,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                                     .withOpacity(0.2)),
                           ),
                           child: Text(
-                            _formatScheduledDate(date), // ← formatted date only
+                            _formatScheduledDate(date),
                             style: const TextStyle(
                                 fontSize: 11,
                                 color: Color(0xFF6C63FF),
@@ -816,7 +884,8 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  Widget _buildNegotiationSection() {
+  Widget _buildNegotiationSection(TaskModel task) {
+    final neg = _negotiation(task);
     return _SectionCard(
       title: 'Negotiation Request',
       icon: Icons.handshake_outlined,
@@ -828,7 +897,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
               Expanded(
                   child: _feeBox(
                       'Current',
-                      '£${(_negotiation['currentFee'] as num?)?.toStringAsFixed(0) ?? _task.guidePrice.toStringAsFixed(0)}',
+                      '£${(neg['currentFee'] as num?)?.toStringAsFixed(0) ?? task.guidePrice.toStringAsFixed(0)}',
                       false)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -838,11 +907,11 @@ class _TaskDetailPageState extends State<TaskDetailPage>
               Expanded(
                   child: _feeBox(
                       'Requested',
-                      '£${(_negotiation['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
+                      '£${(neg['requestedFee'] as num?)?.toStringAsFixed(0) ?? '0'}',
                       true)),
             ],
           ),
-          if (_negotiation['reason'] != null) ...[
+          if (neg['reason'] != null) ...[
             const SizedBox(height: 12),
             Container(
               width: double.infinity,
@@ -859,7 +928,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
                       size: 16, color: Colors.grey[300]),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(_negotiation['reason'],
+                    child: Text(neg['reason'],
                         style: TextStyle(
                             fontSize: 13,
                             color: Colors.grey[600],
@@ -900,7 +969,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  Widget _buildActionSpaceSection() {
+  Widget _buildActionSpaceSection(TaskModel task) {
     final actionMeta = <String, _ActionMeta>{
       'accept_task': _ActionMeta(
           label: 'Accept Task',
@@ -923,14 +992,14 @@ class _TaskDetailPageState extends State<TaskDetailPage>
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
-        children: _actionSpace.map((action) {
+        children: _actionSpace(task).map((action) {
           final meta = actionMeta[action];
           if (meta == null) return const SizedBox.shrink();
           return GestureDetector(
             onTap: () {},
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: meta.color.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
@@ -955,7 +1024,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
     );
   }
 
-  Widget _buildAuditSection() {
+  Widget _buildAuditSection(TaskModel task) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
@@ -965,7 +1034,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           Text('Created ',
               style: TextStyle(fontSize: 11, color: Colors.grey[400])),
           Text(
-            _formatDateTime(_task.metadata['createdAt'] as String?),
+            _formatDateTime(task.metadata['createdAt'] as String?),
             style: TextStyle(
                 fontSize: 11,
                 color: Colors.grey[500],
@@ -977,7 +1046,7 @@ class _TaskDetailPageState extends State<TaskDetailPage>
           Text('Updated ',
               style: TextStyle(fontSize: 11, color: Colors.grey[400])),
           Text(
-            _formatDateTime(_task.metadata['updatedAt'] as String?),
+            _formatDateTime(task.metadata['updatedAt'] as String?),
             style: TextStyle(
                 fontSize: 11,
                 color: Colors.grey[500],
@@ -1038,13 +1107,12 @@ class _QuoteStatusChip extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.message_outlined,
-                  size: 11, color: Colors.grey[400]),
+              Icon(Icons.message_outlined, size: 11, color: Colors.grey[400]),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(declineReason!,
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey[500])),
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey[500])),
               ),
             ],
           ),
