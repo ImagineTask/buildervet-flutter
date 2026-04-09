@@ -57,8 +57,7 @@ class AuthGate extends StatelessWidget {
           return const Scaffold(
             backgroundColor: Color(0xFFF5F7FA),
             body: Center(
-              child:
-                  CircularProgressIndicator(color: Color(0xFF6C63FF)),
+              child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
             ),
           );
         }
@@ -106,7 +105,6 @@ class _MainNavigationState extends State<MainNavigation> {
   }
 
   void _onHomeTabChanged() {
-    // Switch bottom nav to Home (index 0)
     setState(() => _currentIndex = 0);
   }
 
@@ -120,6 +118,21 @@ class _MainNavigationState extends State<MainNavigation> {
         .where('isRead', isEqualTo: false)
         .snapshots()
         .map((snap) => snap.docs.length);
+  }
+
+  Stream<int> _unreadChatCount() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
+    return FirebaseFirestore.instance
+        .collection('chats')
+        .where('participants', arrayContains: uid)
+        .snapshots()
+        .map((snap) => snap.docs.fold<int>(0, (sum, doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              final unread = Map<String, dynamic>.from(
+                  data['unreadCount'] as Map? ?? {});
+              return sum + ((unread[uid] as num?)?.toInt() ?? 0);
+            }));
   }
 
   @override
@@ -142,53 +155,58 @@ class _MainNavigationState extends State<MainNavigation> {
         ),
         child: SafeArea(
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: StreamBuilder<int>(
               stream: _unreadAlertCount(),
-              builder: (context, snapshot) {
-                final alertBadge = snapshot.data ?? 0;
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _NavItem(
-                        icon: Icons.home_outlined,
-                        activeIcon: Icons.home_rounded,
-                        label: 'Home',
-                        index: 0,
-                        currentIndex: _currentIndex,
-                        onTap: _onTap),
-                    _NavItem(
-                        icon: Icons.people_outline,
-                        activeIcon: Icons.people_rounded,
-                        label: 'Network',
-                        index: 1,
-                        currentIndex: _currentIndex,
-                        onTap: _onTap),
-                    _NavItem(
-                        icon: Icons.calendar_today_outlined,
-                        activeIcon: Icons.calendar_today_rounded,
-                        label: 'Calendar',
-                        index: 2,
-                        currentIndex: _currentIndex,
-                        onTap: _onTap),
-                    _NavItem(
-                        icon: Icons.chat_bubble_outline,
-                        activeIcon: Icons.chat_bubble_rounded,
-                        label: 'Chat',
-                        index: 3,
-                        currentIndex: _currentIndex,
-                        onTap: _onTap,
-                        badge: 11),
-                    _NavItem(
-                        icon: Icons.notifications_outlined,
-                        activeIcon: Icons.notifications_rounded,
-                        label: 'Alert',
-                        index: 4,
-                        currentIndex: _currentIndex,
-                        onTap: _onTap,
-                        badge: alertBadge),
-                  ],
+              builder: (context, alertSnapshot) {
+                final alertBadge = alertSnapshot.data ?? 0;
+                return StreamBuilder<int>(
+                  stream: _unreadChatCount(),
+                  builder: (context, chatSnapshot) {
+                    final chatBadge = chatSnapshot.data ?? 0;
+                    return Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _NavItem(
+                            icon: Icons.home_outlined,
+                            activeIcon: Icons.home_rounded,
+                            label: 'Home',
+                            index: 0,
+                            currentIndex: _currentIndex,
+                            onTap: _onTap),
+                        _NavItem(
+                            icon: Icons.people_outline,
+                            activeIcon: Icons.people_rounded,
+                            label: 'Network',
+                            index: 1,
+                            currentIndex: _currentIndex,
+                            onTap: _onTap),
+                        _NavItem(
+                            icon: Icons.calendar_today_outlined,
+                            activeIcon: Icons.calendar_today_rounded,
+                            label: 'Calendar',
+                            index: 2,
+                            currentIndex: _currentIndex,
+                            onTap: _onTap),
+                        _NavItem(
+                            icon: Icons.chat_bubble_outline,
+                            activeIcon: Icons.chat_bubble_rounded,
+                            label: 'Chat',
+                            index: 3,
+                            currentIndex: _currentIndex,
+                            onTap: _onTap,
+                            badge: chatBadge),
+                        _NavItem(
+                            icon: Icons.notifications_outlined,
+                            activeIcon: Icons.notifications_rounded,
+                            label: 'Alert',
+                            index: 4,
+                            currentIndex: _currentIndex,
+                            onTap: _onTap,
+                            badge: alertBadge),
+                      ],
+                    );
+                  },
                 );
               },
             ),
