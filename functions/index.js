@@ -6,10 +6,9 @@ const { getMessaging } = require("firebase-admin/messaging");
 initializeApp();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Task triggers (unchanged)
+// Task triggers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Trigger on CREATE — new task assigned
 exports.onTaskAssigned = onDocumentCreated("tasks/{taskId}", async (event) => {
   const task = event.data.data();
   const taskId = event.params.taskId;
@@ -29,7 +28,6 @@ exports.onTaskAssigned = onDocumentCreated("tasks/{taskId}", async (event) => {
   await notifyRecipients(recipientIds, "New Task Assigned", task.taskName, taskId);
 });
 
-// Trigger on UPDATE — builder added, quote sent, task denied, task revised
 exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
   const before = event.data.before.data();
   const after = event.data.after.data();
@@ -105,7 +103,7 @@ exports.onTaskUpdated = onDocumentUpdated("tasks/{taskId}", async (event) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chat trigger — fires when a new message is created in any conversation
+// Chat trigger
 // ─────────────────────────────────────────────────────────────────────────────
 
 exports.onChatMessageCreated = onDocumentCreated(
@@ -123,7 +121,6 @@ exports.onChatMessageCreated = onDocumentCreated(
       return;
     }
 
-    // ── Load the parent chat doc to find participants + sender name ───────────
     const chatDoc = await getFirestore().collection("chats").doc(chatId).get();
     if (!chatDoc.exists) {
       console.log("⚠️ Chat doc not found:", chatId);
@@ -134,17 +131,13 @@ exports.onChatMessageCreated = onDocumentCreated(
     const participants = chatData.participants ?? [];
     const participantNames = chatData.participantNames ?? {};
 
-    // Recipients = everyone in the chat except the sender
     const recipientIds = participants.filter(id => id !== senderId);
     if (recipientIds.length === 0) {
       console.log("⚠️ No recipients to notify.");
       return;
     }
 
-    // Sender's display name from participantNames map
     const senderName = participantNames[senderId] ?? "Someone";
-
-    // Notification body — image or text
     const isImage = message.type === "image";
     const notifBody = isImage
       ? `${senderName} sent a photo`
@@ -152,14 +145,10 @@ exports.onChatMessageCreated = onDocumentCreated(
 
     console.log(`🔔 Notifying ${recipientIds.length} recipient(s) — body: "${notifBody}"`);
 
-    // ── Notify each recipient — skip if they have the chat open (unread = 0) ──
     for (const recipientId of recipientIds) {
-      // Only send push if the recipient actually has unread messages
-      // (unreadCount[recipientId] > 0 means they haven't seen it yet)
       const unreadCount = chatData.unreadCount?.[recipientId] ?? 0;
       if (unreadCount === 0) {
         console.log(`ℹ️ ${recipientId} has chat open (unread=0), skipping push.`);
-        // Still write the in-app alert so it appears in their notification centre
       }
 
       try {
@@ -190,16 +179,14 @@ exports.onChatMessageCreated = onDocumentCreated(
                 chatId,
                 senderId,
               },
-              // iOS: show in foreground, play sound, increment badge
               apns: {
                 payload: {
                   aps: {
                     sound: "default",
-                    badge: 1,
+                    "content-available": 1,
                   },
                 },
               },
-              // Android: high priority so it wakes the screen
               android: {
                 priority: "high",
                 notification: {
@@ -269,6 +256,21 @@ async function notifyRecipients(recipientIds, title, body, taskId) {
             token,
             notification: { title, body },
             data: { taskId },
+            apns: {
+              payload: {
+                aps: {
+                  sound: "default",
+                  "content-available": 1,
+                },
+              },
+            },
+            android: {
+              priority: "high",
+              notification: {
+                sound: "default",
+                channelId: "alerts",
+              },
+            },
           });
           console.log("✅ Push sent to:", recipientId);
         } catch (fcmErr) {
@@ -308,7 +310,6 @@ async function notifyRecipients(recipientIds, title, body, taskId) {
   }
 }
 
-// Truncate long strings for notification previews
 function _truncate(str, maxLen) {
   if (str.length <= maxLen) return str;
   return str.substring(0, maxLen).trimEnd() + "…";
